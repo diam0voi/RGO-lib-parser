@@ -315,7 +315,7 @@ class JournalDownloaderApp:
                          self.root.after(0, lambda: self.update_status(f"Ошибка на стр. {i+1}: Получен HTML вместо изображения. Вероятно, проблема с сессией/куками."))
                          continue
 
-                    extension = ".jpg" # По умолчанию jpg
+                    extension = ".jpg"
                     if 'png' in content_type: extension = ".png"
                     elif 'gif' in content_type: extension = ".gif"
                     elif 'bmp' in content_type: extension = ".bmp"
@@ -374,7 +374,6 @@ class JournalDownloaderApp:
         finally:
             self.stop_event.clear()
             self.current_thread = None
-            # --- ИЗМЕНЕНО: Убедимся, что кнопки разблокируются ---
             self.root.after(0, lambda: self._set_buttons_state(task_running=False))
 
     def _thread_process(self):
@@ -402,7 +401,6 @@ class JournalDownloaderApp:
                 self.root.after(0, lambda: messagebox.showerror("Ошибка", f"Папка '{input_folder}' не найдена."))
                 return
 
-            # --- ИЗМЕНЕНО: Улучшенная сортировка для файлов типа page_001.jpg, page_10.jpg ---
             sorted_files = sorted([f for f in all_files if get_page_number(f) != -1], key=get_page_number)
 
             if not sorted_files:
