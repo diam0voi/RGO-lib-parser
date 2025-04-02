@@ -1,28 +1,22 @@
-# .github/workflows/crossbuild-release.yml
-# Имя рабочего процесса (отображается в GitHub Actions)
 name: Build Cross-Platform Release (Current Version)
 
-# Триггер: запускать при публикации нового релиза
 on:
   release:
-    types: [published] # Запускается только когда релиз опубликован (не черновик)
+    types: [published]
 
-# Разрешения, необходимые для загрузки артефактов в релиз
 permissions:
   contents: write
 
-# Задачи (jobs), которые будут выполняться
 jobs:
   # ----------------------- Задача для сборки под Windows -----------------------
   build-windows:
     name: Build for Windows
     runs-on: windows-latest
-    # ЗАПУСКАТЬ ТОЛЬКО ЕСЛИ ТЕГ РЕЛИЗА НЕ 'v1.0'
     if: github.event.release.tag_name != 'v1.0'
 
     defaults:
       run:
-        working-directory: ./cur version # Работаем внутри папки cur version
+        working-directory: ./cur version
 
     steps:
       - name: Check out code
@@ -31,7 +25,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13' # Убедись, что версия подходит
+          python-version: '3.13'
 
       - name: Install dependencies
         run: |
@@ -48,20 +42,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./cur version/dist/RGO_lib_parser.exe # Путь включает cur version
-          asset_name: RGO_lib_parser_win64.exe # Имя для текущих версий
+          asset_path: ./cur version/dist/RGO_lib_parser.exe
+          asset_name: RGO_lib_parser_win64.exe
           asset_content_type: application/vnd.microsoft.portable-executable
 
   # ----------------------- Задача для сборки под macOS -----------------------
   build-macos:
     name: Build for macOS
     runs-on: macos-latest
-    # ЗАПУСКАТЬ ТОЛЬКО ЕСЛИ ТЕГ РЕЛИЗА НЕ 'v1.0'
     if: github.event.release.tag_name != 'v1.0'
 
     defaults:
       run:
-        working-directory: ./cur version # Работаем внутри папки cur version
+        working-directory: ./cur version
 
     steps:
       - name: Check out code
@@ -90,20 +83,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./cur version/dist/RGO_lib_parser.zip # Путь включает cur version
-          asset_name: RGO_lib_parser_macOS.zip # Имя для текущих версий
+          asset_path: ./cur version/dist/RGO_lib_parser.zip
+          asset_name: RGO_lib_parser_macOS.zip
           asset_content_type: application/zip
 
   # ----------------------- Задача для сборки под Linux (Ubuntu) -----------------------
   build-linux:
     name: Build for Linux (Ubuntu)
     runs-on: ubuntu-latest
-    # ЗАПУСКАТЬ ТОЛЬКО ЕСЛИ ТЕГ РЕЛИЗА НЕ 'v1.0'
     if: github.event.release.tag_name != 'v1.0'
 
     defaults:
       run:
-        working-directory: ./cur version # Работаем внутри папки cur version
+        working-directory: ./cur version
 
     steps:
       - name: Check out code
@@ -118,7 +110,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-tk
-        working-directory: . # Выполняем в корне
+        working-directory: .
 
       - name: Install dependencies
         run: |
@@ -135,6 +127,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./cur version/dist/RGO_lib_parser # Путь включает cur version
-          asset_name: RGO_lib_parser_ubuntu # Имя для текущих версий
+          asset_path: ./cur version/dist/RGO_lib_parser
+          asset_name: RGO_lib_parser_ubuntu
           asset_content_type: application/octet-stream
