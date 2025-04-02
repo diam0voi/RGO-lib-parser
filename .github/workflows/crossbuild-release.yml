@@ -1,0 +1,126 @@
+# Имя рабочего процесса (отображается в GitHub Actions)
+name: Build Cross-Platform Release
+
+# Триггер: запускать при публикации нового релиза
+on:
+  release:
+    types: [published] # Запускается только когда релиз опубликован (не черновик)
+
+# Разрешения, необходимые для загрузки артефактов в релиз
+permissions:
+  contents: write
+
+# Задачи (jobs), которые будут выполняться
+jobs:
+  # ----------------------- Задача для сборки под Windows -----------------------
+  build-windows:
+    name: Build for Windows
+    runs-on: windows-latest # Запускать на последней версии Windows
+
+    steps:
+      # 1. Получаем код из репозитория
+      - name: Check out code
+        uses: actions/checkout@v4 # Используем стандартное действие для checkout
+
+      # 2. Устанавливаем Python (укажи нужную версию)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '>3.8'
+
+      # 3. Устанавливаем зависимости Python
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests Pillow pyinstaller
+
+      # 4. Собираем приложение с помощью PyInstaller
+      - name: Build with PyInstaller
+        run: pyinstaller --onefile --windowed --icon="winapp_lilacbook.ico" --add-data "window_bnwbook.png;." --name RGO_lib_parser ru_geo_lib_parser_by_b0s.py
+
+      # 5. Загружаем собранный .exe как артефакт релиза
+      - name: Upload Release Asset (Windows)
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Токен для аутентификации
+        with:
+          upload_url: ${{ github.event.release.upload_url }} # URL для загрузки в текущий релиз
+          asset_path: ./dist/RGO_lib_parser.exe # Путь к собранному файлу
+          asset_name: RGO_lib_parser_win64.exe # Имя файла в релизе
+          asset_content_type: application/vnd.microsoft.portable-executable # MIME-тип для .exe
+
+  # ----------------------- Задача для сборки под macOS -----------------------
+  build-macos:
+    name: Build for macOS
+    runs-on: macos-latest # Запускать на последней версии macOS
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      # Установка Python на macOS (обычно включает Tcl/Tk)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '>3.8'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests Pillow pyinstaller
+
+      # Собираем .app бандл
+      - name: Build with PyInstaller
+        run: pyinstaller --windowed --icon="macapp_lilacbook.icns" --add-data "window_bnwbook.png:." --name "RGO Lib Parser" ru_geo_lib_parser_by_b0s.py
+        # На macOS --windowed создает .app бандл в папке dist
+
+      # Архивируем .app бандл для загрузки (GitHub не загружает папки как артефакт)
+      - name: Create Zip Archive of .app
+        run: zip -r ./dist/RGO_lib_parser.zip ./dist/"RGO Lib Parser.app"
+
+      # Загружаем архив .app как артефакт релиза
+      - name: Upload Release Asset (macOS)
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./dist/RGO_lib_parser.zip # Путь к архиву
+          asset_name: RGO_lib_parser_macOS.zip # Имя файла в релизе
+          asset_content_type: application/zip # MIME-тип для .zip
+
+  # ----------------------- Задача для сборки под Linux (Ubuntu) -----------------------
+  build-linux:
+    name: Build for Linux (Ubuntu)
+    runs-on: ubuntu-latest # Запускать на последней версии Ubuntu
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      # Установка Python и Tkinter на Ubuntu
+      - name: Set up Python 3.10 and Tkinter
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3.10 python3-pip python3-tk
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install requests Pillow pyinstaller
+
+      # Собираем исполняемый файл
+      - name: Build with PyInstaller
+        run: pyinstaller --onefile --noconsole --add-data "window_bnwbook.png:." --name RGO_lib_parser ru_geo_lib_parser_by_b0s.py
+        # --noconsole аналог --windowed для Linux
+
+      # Загружаем исполняемый файл Linux как артефакт релиза
+      - name: Upload Release Asset (Linux)
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./dist/RGO_lib_parser # Путь к файлу
+          asset_name: RGO_lib_parser_ubuntu # Имя файла в релизе
+          asset_content_type: application/octet-stream # Общий MIME-тип для бинарника

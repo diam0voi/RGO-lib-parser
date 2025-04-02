@@ -398,3 +398,33 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+
+# vitruals
+venv/
+.venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# PyInstaller
+dist/
+build/
+
+# from IDE
+.idea/
+
+# configuratio
+*.local
+*.log
+
+# data
+downloaded_pages/
+final_spreads/
+*_output/
+*_output_smart/
