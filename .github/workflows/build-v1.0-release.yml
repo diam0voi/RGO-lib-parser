@@ -132,3 +132,4 @@ jobs:
           asset_path: ./old versions/v1.0/dist/ru_geo_society_lib_parser_v1_0
           asset_name: RGO_Parser_v1.0_ubuntu
           asset_content_type: application/octet-stream
+      
