@@ -1,4 +1,4 @@
-name: Build Cross-Platform Release (Current Version)
+name: Build Cross-Platform Release
 
 on:
   release:
@@ -12,11 +12,6 @@ jobs:
   build-windows:
     name: Build for Windows
     runs-on: windows-latest
-    if: github.event.release.tag_name != 'v1.0'
-
-    defaults:
-      run:
-        working-directory: ./cur version
 
     steps:
       - name: Check out code
@@ -42,7 +37,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./cur version/dist/RGO_lib_parser.exe
+          asset_path: ./dist/RGO_lib_parser.exe
           asset_name: RGO_lib_parser_win64.exe
           asset_content_type: application/vnd.microsoft.portable-executable
 
@@ -50,11 +45,6 @@ jobs:
   build-macos:
     name: Build for macOS
     runs-on: macos-latest
-    if: github.event.release.tag_name != 'v1.0'
-
-    defaults:
-      run:
-        working-directory: ./cur version
 
     steps:
       - name: Check out code
@@ -71,6 +61,7 @@ jobs:
           pip install pyinstaller
           pip install -r requirements.txt
 
+      # Собираем .app бандл (из корня)
       - name: Build with PyInstaller
         run: pyinstaller --windowed --icon="macapp_lilacbook.icns" --add-data "window_bnwbook.png:." --name "RGO Lib Parser" ru_geo_lib_parser_by_b0s.py
 
@@ -83,7 +74,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./cur version/dist/RGO_lib_parser.zip
+          asset_path: ./dist/RGO_lib_parser.zip
           asset_name: RGO_lib_parser_macOS.zip
           asset_content_type: application/zip
 
@@ -91,11 +82,6 @@ jobs:
   build-linux:
     name: Build for Linux (Ubuntu)
     runs-on: ubuntu-latest
-    if: github.event.release.tag_name != 'v1.0'
-
-    defaults:
-      run:
-        working-directory: ./cur version
 
     steps:
       - name: Check out code
@@ -110,7 +96,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-tk
-        working-directory: .
 
       - name: Install dependencies
         run: |
@@ -127,6 +112,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./cur version/dist/RGO_lib_parser
+          asset_path: ./dist/RGO_lib_parser
           asset_name: RGO_lib_parser_ubuntu
           asset_content_type: application/octet-stream
