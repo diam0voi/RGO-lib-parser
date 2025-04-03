@@ -1,5 +1,9 @@
 # RGO-lib-parser
 Simple thing for a simple task
+#
+[![Test Status](https://img.shields.io/github/actions/workflow/status/diam0voi/RGO-lib-parser/ci.yml?branch=main&label=tests&logo=github)](https://github.com/diam0voi/RGO-lib-parser/actions/workflows/ci.yml)
+[![Coverage Status](https://img.shields.io/coveralls/github/diam0voi/RGO-lib-parser?branch=main&logo=coveralls)](https://coveralls.io/github/diam0voi/RGO-lib-parser?branch=main)
+
 
 ![image](https://github.com/user-attachments/assets/d81cdfbc-3502-4eae-964e-df80bf3bc921)
 
