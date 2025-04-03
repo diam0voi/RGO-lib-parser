@@ -30,7 +30,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build with PyInstaller
-        run: pyinstaller --onefile --windowed --icon="assets/winapp_lilacbook.ico" --add-data "assets/window_bnwbook.png;." --name RGO_lib_parser src/ru_geo_lib_parser_by_b0s.py
+        run: pyinstaller --onefile --windowed --icon="assets/winapp_lilacbook.ico" --add-data "assets/window_bnwbook.png;." --name RGO_lib_parser src/rgo_lib_parser_by_b0s.py
 
       - name: Upload Release Asset (Windows)
         uses: actions/upload-release-asset@v1
@@ -64,7 +64,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build with PyInstaller
-        run: pyinstaller --windowed --icon="assets/macapp_lilacbook.icns" --add-data "assets/window_bnwbook.png:." --name "RGO Lib Parser" src/ru_geo_lib_parser_by_b0s.py
+        run: pyinstaller --windowed --icon="assets/macapp_lilacbook.icns" --add-data "assets/window_bnwbook.png:." --name "RGO Lib Parser" src/rgo_lib_parser_by_b0s.py
 
       - name: Create Zip Archive of .app
         run: zip -r ./dist/RGO_lib_parser_macOS.zip ./dist/"RGO Lib Parser.app"
@@ -106,7 +106,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build with PyInstaller
-        run: pyinstaller --onefile --noconsole --add-data "assets/window_bnwbook.png:." --name RGO_lib_parser src/ru_geo_lib_parser_by_b0s.py
+        run: pyinstaller --onefile --noconsole --add-data "assets/window_bnwbook.png:." --name RGO_lib_parser src/rgo_lib_parser_by_b0s.py
 
       - name: Upload Release Asset (Linux)
         uses: actions/upload-release-asset@v1

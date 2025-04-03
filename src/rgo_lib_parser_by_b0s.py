@@ -458,6 +458,7 @@ class JournalDownloaderApp:
         self.status_text = scrolledtext.ScrolledText(status_frame, height=10, wrap=tk.WORD, state=tk.DISABLED)
         self.status_text.pack(fill=tk.BOTH, expand=True)
 
+        self.initial_settings = {}
         self.load_settings()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -672,20 +673,52 @@ class JournalDownloaderApp:
         self.pages_dir_entry.insert(0, loaded_settings.get('pages_dir', config.DEFAULT_PAGES_DIR))
         self.spreads_dir_entry.insert(0, loaded_settings.get('spreads_dir', config.DEFAULT_SPREADS_DIR))
 
+        # Чтобы не спамить лишний раз
+        self.initial_settings = {
+        'url_base': self.url_base_entry.get(),
+        'url_ids': self.url_ids_entry.get(),
+        'pdf_filename': self.pdf_filename_entry.get(),
+        'total_pages': self.total_pages_entry.get(),
+        'pages_dir': self.pages_dir_entry.get(),
+        'spreads_dir': self.spreads_dir_entry.get(),
+        }
+        logging.info(f"Initial settings captured for comparison: {self.initial_settings}")
 
     def on_closing(self):
         if self.current_thread and self.current_thread.is_alive():
             if messagebox.askyesno("Выход", "Процесс еще выполняется. Прервать и выйти?"):
                 logging.info("User chose to interrupt running process and exit.")
                 self.stop_event.set()
-                self.root.after(500, self._destroy_root)
+                self.root.after(500, self._check_thread_before_destroy)
             else:
                 logging.info("User chose not to exit while process is running.")
                 return
         else:
              logging.info("Application closing normally.")
-             self.save_settings()
+
+             current_settings = {
+                 'url_base': self.url_base_entry.get(),
+                 'url_ids': self.url_ids_entry.get(),
+                 'pdf_filename': self.pdf_filename_entry.get(),
+                 'total_pages': self.total_pages_entry.get(),
+                 'pages_dir': self.pages_dir_entry.get(),
+                 'spreads_dir': self.spreads_dir_entry.get(),
+             }
+
+             if current_settings != self.initial_settings:
+                 logging.info("Settings have changed from initial values. Saving...")
+                 self.save_settings()
+             else:
+                 logging.info("Settings are unchanged from initial values. Skipping save.")
              self._destroy_root()
+
+
+    def _check_thread_before_destroy(self):
+        """Ждет завершения потока перед закрытием окна."""
+        if self.current_thread and self.current_thread.is_alive():
+            self.root.after(100, self._check_thread_before_destroy)
+        else:
+            self._destroy_root()
 
 
     def _destroy_root(self):
