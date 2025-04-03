@@ -24,3 +24,33 @@ Simple thing for a simple task
 
 #
 Идей для будущих обновлений пока что нет, stay tuned
+
+#
+```
+├── .github/
+│   └── workflows/
+│       ├── crossbuild-release.yml
+│       └── build-v1.0-release.yml
+│
+├── v0.1 separated/        
+│   ├── sdloady_RGO_lib.py
+│   └── spready_RGO_lib.py
+│
+│
+├── src/
+│   ├── ru_geo_lib_parser_by_b0s.py
+│   └── config.py
+│
+│
+├── assets/
+│   ├── macapp_lilacbook.icns
+│   ├── winapp_lilacbook.ico
+│   └── window_bnwbook.png
+│
+│
+├── .gitignore
+├── CODE_OF_CONDUCT.md
+├── LICENSE
+├── README.md
+└── requirements.txt
+```
