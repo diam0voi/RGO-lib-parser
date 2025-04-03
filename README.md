@@ -38,8 +38,9 @@ Simple thing for a simple task
 │
 │
 ├── src/
-│   ├── ru_geo_lib_parser_by_b0s.py
-│   └── config.py
+│   ├── config.py
+│   └── ru_geo_lib_parser_by_b0s.py
+│   └── rgo_lib_parser_test.py
 │
 │
 ├── assets/
