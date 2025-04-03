@@ -1,4 +1,4 @@
-name: Build Cross-Platform Release
+name: Build Cross-Platform Release (Current Version)
 
 on:
   release:
@@ -12,6 +12,7 @@ jobs:
   build-windows:
     name: Build for Windows
     runs-on: windows-latest
+    if: github.event.release.tag_name != 'v1.0'
 
     steps:
       - name: Check out code
@@ -29,7 +30,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build with PyInstaller
-        run: pyinstaller --onefile --windowed --icon="winapp_lilacbook.ico" --add-data "window_bnwbook.png;." --name RGO_lib_parser ru_geo_lib_parser_by_b0s.py
+        run: pyinstaller --onefile --windowed --icon="assets/winapp_lilacbook.ico" --add-data "assets/window_bnwbook.png;." --name RGO_lib_parser src/ru_geo_lib_parser_by_b0s.py
 
       - name: Upload Release Asset (Windows)
         uses: actions/upload-release-asset@v1
@@ -45,6 +46,7 @@ jobs:
   build-macos:
     name: Build for macOS
     runs-on: macos-latest
+    if: github.event.release.tag_name != 'v1.0'
 
     steps:
       - name: Check out code
@@ -61,12 +63,11 @@ jobs:
           pip install pyinstaller
           pip install -r requirements.txt
 
-      # Собираем .app бандл (из корня)
       - name: Build with PyInstaller
-        run: pyinstaller --windowed --icon="macapp_lilacbook.icns" --add-data "window_bnwbook.png:." --name "RGO Lib Parser" ru_geo_lib_parser_by_b0s.py
+        run: pyinstaller --windowed --icon="assets/macapp_lilacbook.icns" --add-data "assets/window_bnwbook.png:." --name "RGO Lib Parser" src/ru_geo_lib_parser_by_b0s.py
 
       - name: Create Zip Archive of .app
-        run: zip -r ./dist/RGO_lib_parser.zip ./dist/"RGO Lib Parser.app"
+        run: zip -r ./dist/RGO_lib_parser_macOS.zip ./dist/"RGO Lib Parser.app"
 
       - name: Upload Release Asset (macOS)
         uses: actions/upload-release-asset@v1
@@ -74,7 +75,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./dist/RGO_lib_parser.zip
+          asset_path: ./dist/RGO_lib_parser_macOS.zip
           asset_name: RGO_lib_parser_macOS.zip
           asset_content_type: application/zip
 
@@ -82,6 +83,7 @@ jobs:
   build-linux:
     name: Build for Linux (Ubuntu)
     runs-on: ubuntu-latest
+    if: github.event.release.tag_name != 'v1.0'
 
     steps:
       - name: Check out code
@@ -104,7 +106,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build with PyInstaller
-        run: pyinstaller --onefile --noconsole --add-data "window_bnwbook.png:." --name RGO_lib_parser ru_geo_lib_parser_by_b0s.py
+        run: pyinstaller --onefile --noconsole --add-data "assets/window_bnwbook.png:." --name RGO_lib_parser src/ru_geo_lib_parser_by_b0s.py
 
       - name: Upload Release Asset (Linux)
         uses: actions/upload-release-asset@v1

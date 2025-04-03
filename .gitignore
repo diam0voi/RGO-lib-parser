@@ -415,6 +415,7 @@ __pycache__/
 # PyInstaller
 dist/
 build/
+*.spec
 
 # from IDE
 .idea/
