@@ -1,7 +1,7 @@
 # RGO-lib-parser
 Simple thing for a simple task
 
-![image](https://github.com/user-attachments/assets/c3bc8d7b-6b6b-4e5d-9866-3bccd1f51667)
+![image](https://github.com/user-attachments/assets/d81cdfbc-3502-4eae-964e-df80bf3bc921)
 
 ![image](https://github.com/user-attachments/assets/461d5bd4-1fc5-4092-9ce8-c4c038e67fdb)
 
