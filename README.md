@@ -1,5 +1,5 @@
 # RGO-lib-parser: description
-[![На Русском](https://img.shields.io/badge/lang-ru-red.svg)](https://github.com/diam0voi/RGO-lib-parser/README.ru.md)
+На русском: [![На Русском](https://img.shields.io/badge/lang-ru-red.svg)](https://github.com/diam0voi/RGO-lib-parser/blob/main/README.ru.md)
 
 ### Simple thing for a simple task
 At its core - you're looking at the parser designed for a specific site with its somewhat bizarre data storage format. This site, however, contains scans of rare and very niche historical literary sources that you may need, as for example, for an interactive panel at certain exhibition. But you can't just get them! You forced to only watch! So the idea was born to automate the process of manually creating a whole plethora of screenshots: I decided to make life easier for my bros who had to do this. 
