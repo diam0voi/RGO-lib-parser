@@ -1,5 +1,5 @@
 # RGO-lib-parser: description
-На русском ---> [![На Русском](https://img.shields.io/badge/lang-ru-red.svg)](https://github.com/diam0voi/RGO-lib-parser/blob/main/README.ru.md)
+На русском ---> [![На Русском](https://img.shields.io/badge/lang-ru-red.svg?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/blob/main/README.ru.md)
 
 ### Simple thing for a simple task
 At its core - you're looking at the parser designed for a specific site with its somewhat bizarre data storage format. This site, however, contains scans of rare and very niche historical literary sources that you may need, as for example, for an interactive panel at certain exhibition. But you can't just get them! You forced to only watch! So the idea was born to automate the process of manually creating a whole plethora of screenshots: I decided to make life easier for my bros who had to do this. 
@@ -8,9 +8,9 @@ This is my first project of SUCH a level, so don't be surprised by 2-line commit
 
 |        |                                                                                                                                                             |
 |-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Quality** | [![Test Status](https://img.shields.io/github/actions/workflow/status/diam0voi/RGO-lib-parser/ci.yml?branch=main&label=tests&logo=github)](https://github.com/diam0voi/RGO-lib-parser/actions/workflows/ci.yml) [![Coverage Status](https://coveralls.io/repos/github/diam0voi/RGO-lib-parser/badge.svg?branch=main)](https://coveralls.io/github/diam0voi/RGO-lib-parser?branch=main) |
-| **Compatibility** | ![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13+-green?logo=python&logoColor=yellow) ![Windows](https://img.shields.io/badge/Windows%2010+-0078D6) ![macOS](https://img.shields.io/badge/MacOS%2015+-000000?logo=macos&logoColor=white) ![Ubuntu](https://img.shields.io/badge/Ubuntu%2024+-E95420?logo=ubuntu&logoColor=white) |
-| **Other**       |  [![GitHub last commit](https://img.shields.io/github/last-commit/diam0voi/RGO-lib-parser)](https://github.com/diam0voi/RGO-lib-parser/commits/main) [![GitHub repo size](https://img.shields.io/github/repo-size/diam0voi/RGO-lib-parser.svg)](https://github.com/diam0voi/RGO-lib-parser/) [![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/diam0voi/RGO-lib-parser.svg)](https://github.com/diam0voi/RGO-lib-parser/) |
+| **Quality** | [![Test Status](https://img.shields.io/github/actions/workflow/status/diam0voi/RGO-lib-parser/ci.yml?branch=main&label=tests&logo=github&style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/actions/workflows/ci.yml) [![Coverage Status](https://coveralls.io/repos/github/diam0voi/RGO-lib-parser/badge.svg?branch=main)](https://coveralls.io/github/diam0voi/RGO-lib-parser?branch=main) [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](https://github.com/psf/black) [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits&logoColor=white&style=flat-square)](https://conventionalcommits.org) |
+| **Compatibility** | ![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13+-green?logo=python&logoColor=yellow&style=flat-square) ![Windows](https://img.shields.io/badge/Windows%2010+-0078D6?style=flat-square) ![macOS](https://img.shields.io/badge/MacOS%2015+-000000?logo=macos&logoColor=white&style=flat-square) ![Ubuntu](https://img.shields.io/badge/Ubuntu%2024+-E95420?logo=ubuntu&logoColor=white&style=flat-square) |
+| **Other**       |  [![GitHub last commit](https://img.shields.io/github/last-commit/diam0voi/RGO-lib-parser?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/commits/main) [![GitHub repo size](https://img.shields.io/github/repo-size/diam0voi/RGO-lib-parser.svg?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/) [![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/diam0voi/RGO-lib-parser.svg?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/) ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/diam0voi/RGO-lib-parser/total?style=flat-square) |
 | | | 
 
 ## How the app works (example)
@@ -62,5 +62,6 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 ├── CODE_OF_CONDUCT.md
 ├── LICENSE
 ├── README.md
+├── README.ru.md
 └── requirements.txt
 ```
