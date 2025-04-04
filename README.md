@@ -1,15 +1,17 @@
-# RGO-lib-parser
-Simple thing for a simple task
+# RGO-lib-parser: description
+### Simple thing for a simple task
+At its core - you're looking at the parser designed for a specific site with its somewhat bizarre data storage format. This site, however, contains scans of rare and very niche historical literary sources that you may need, as for example, for an interactive panel at certain exhibition. But you can't just get them! You forced to only watch! So the idea was born to automate the process of manually creating a whole plethora of screenshots: I decided to make life easier for my bros who had to do this. 
 
+This is my first project of SUCH a level, so don't be surprised by 2-line commits and ridiculous bugs, I'll definitely get used to it over time and the feeling of cringe will pass (no).
 
-| Категория        | Статус                                                                                                                                                              |
+|        |                                                                                                                                                             |
 |-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Тесты & Качество** | [![Test Status](https://img.shields.io/github/actions/workflow/status/diam0voi/RGO-lib-parser/ci.yml?branch=main&label=tests&logo=github)](https://github.com/diam0voi/RGO-lib-parser/actions/workflows/ci.yml) [![Coverage Status](https://coveralls.io/repos/github/diam0voi/RGO-lib-parser/badge.svg?branch=main)](https://coveralls.io/github/diam0voi/RGO-lib-parser?branch=main) |
-| **Версия**       | [![GitHub release (latest by date)](https://img.shields.io/github/v/release/diam0voi/RGO-lib-parser)](https://github.com/diam0voi/RGO-lib-parser/releases/latest) [![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/diam0voi/RGO-lib-parser.svg)](https://github.com/diam0voi/RGO-lib-parser/) |
-| **Совместимость** | ![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13+-blue?logo=python&logoColor=white) ![Windows](https://img.shields.io/badge/Windows%2010+-0078D6) ![macOS](https://img.shields.io/badge/MacOS%2015+-000000?logo=macos&logoColor=white) ![Ubuntu](https://img.shields.io/badge/Ubuntu%2024+-E95420?logo=ubuntu&logoColor=white) |
-| **Другое**       | [![GitHub license](https://img.shields.io/github/license/diam0voi/RGO-lib-parser)](https://github.com/diam0voi/RGO-lib-parser/blob/main/LICENSE) [![GitHub last commit](https://img.shields.io/github/last-commit/diam0voi/RGO-lib-parser)](https://github.com/diam0voi/RGO-lib-parser/commits/main) [![GitHub repo size](https://img.shields.io/github/repo-size/diam0voi/RGO-lib-parser.svg)](https://github.com/diam0voi/RGO-lib-parser/) |
+| **Quality** | [![Test Status](https://img.shields.io/github/actions/workflow/status/diam0voi/RGO-lib-parser/ci.yml?branch=main&label=tests&logo=github)](https://github.com/diam0voi/RGO-lib-parser/actions/workflows/ci.yml) [![Coverage Status](https://coveralls.io/repos/github/diam0voi/RGO-lib-parser/badge.svg?branch=main)](https://coveralls.io/github/diam0voi/RGO-lib-parser?branch=main) |
+| **Compatibility** | ![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13+-green?logo=python&logoColor=yellow) ![Windows](https://img.shields.io/badge/Windows%2010+-0078D6) ![macOS](https://img.shields.io/badge/MacOS%2015+-000000?logo=macos&logoColor=white) ![Ubuntu](https://img.shields.io/badge/Ubuntu%2024+-E95420?logo=ubuntu&logoColor=white) |
+| **Other**       |  [![GitHub last commit](https://img.shields.io/github/last-commit/diam0voi/RGO-lib-parser)](https://github.com/diam0voi/RGO-lib-parser/commits/main) [![GitHub repo size](https://img.shields.io/github/repo-size/diam0voi/RGO-lib-parser.svg)](https://github.com/diam0voi/RGO-lib-parser/) [![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/diam0voi/RGO-lib-parser.svg)](https://github.com/diam0voi/RGO-lib-parser/) |
+| | | 
 
-
+## How the app works (example)
 ![image](https://github.com/user-attachments/assets/4ec54270-8c15-4eb1-b83e-0956a8c59e79)
 
 ![image](https://github.com/user-attachments/assets/6040a85c-3043-4d02-ad77-e4095adf2ec0)
@@ -17,25 +19,18 @@ Simple thing for a simple task
 ![image](https://github.com/user-attachments/assets/f57566c9-c692-4e68-91f5-5f2589cf34dc)
 
 
-# **ENG** Instructions:
+## Instructions:
 1. Download and run the program for your OS
-2. Open the document you need on the website of the Russian Geographical Society library (in the library's protected view (PV) module)
-3. Make sure the link looks like "https://elib.rgo.ru/safe-view/123456789/.../1/..."
+2. Open the document you need on the website of the open Russian Geographical Society (Obshestvo) library (in the library's protected view (PV) module)
+3. Make sure the link looks like "https://elib.rgo.ru/safe-view/123456789/.../.../..."
 4. Enter the name of the open file (you can see it on the main page) and the number of its pages (displayed in the PV module)
 5. Enjoy!
 
-# **RU** Инструкция: 
-1. Скачайте и запустите программу под вашу ОС
-2. Откройте нужный вам документ на сайте библиотеки Русского Географического Общества (в модуле защищённого просмотра (ЗП) библиотеки)
-3. Убедитесь, что ссылка имеет вид "https://elib.rgo.ru/safe-view/123456789/.../1/..."
-4. Введите имя открытого файла (можно посмотреть на основной странице) и кол-во его страниц (отображается в модуле ЗП)
-5. Наслаждайтесь!
 
+##
+In future update, it's planned to achieve 90%+ coverage with unit testing and implement some simple features with changed organization of the repo.
 
-#
-В будущих обновлениях планируется достичь покрытия 90%+ юнит-тестированием и внедрить некоторые простые фичи.
-
-#
+##
 ```
 ├── .github/
 │   └── workflows/
