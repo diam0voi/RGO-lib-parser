@@ -8,11 +8,9 @@ permissions:
   contents: write
 
 jobs:
-  # ----------------------- Задача для сборки под Windows -----------------------
   build-windows:
     name: Build for Windows
     runs-on: windows-latest
-    if: github.event.release.tag_name != 'v1.0'
 
     steps:
       - name: Check out code
@@ -30,7 +28,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build with PyInstaller
-        run: pyinstaller --onefile --windowed --icon="assets/winapp_lilacbook.ico" --add-data "assets/window_bnwbook.png;." --name RGO_lib_parser src/rgo_lib_parser_by_b0s.py
+        run: pyinstaller --onefile --windowed --icon="assets/winapp_lilacbook.ico" --add-data "assets/window_bnwbook.png;." --name RGO_lib_parser src/main.py
 
       - name: Upload Release Asset (Windows)
         uses: actions/upload-release-asset@v1
@@ -42,11 +40,9 @@ jobs:
           asset_name: RGO_lib_parser_win64.exe
           asset_content_type: application/vnd.microsoft.portable-executable
 
-  # ----------------------- Задача для сборки под macOS -----------------------
   build-macos:
     name: Build for macOS
     runs-on: macos-latest
-    if: github.event.release.tag_name != 'v1.0'
 
     steps:
       - name: Check out code
@@ -64,7 +60,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build with PyInstaller
-        run: pyinstaller --windowed --icon="assets/macapp_lilacbook.icns" --add-data "assets/window_bnwbook.png:." --name "RGO Lib Parser" src/rgo_lib_parser_by_b0s.py
+        run: pyinstaller --windowed --icon="assets/macapp_lilacbook.icns" --add-data "assets/window_bnwbook.png:." --name "RGO Lib Parser" src/main.py
 
       - name: Create Zip Archive of .app
         run: zip -r ./dist/RGO_lib_parser_macOS.zip ./dist/"RGO Lib Parser.app"
@@ -79,11 +75,9 @@ jobs:
           asset_name: RGO_lib_parser_macOS.zip
           asset_content_type: application/zip
 
-  # ----------------------- Задача для сборки под Linux (Ubuntu) -----------------------
   build-linux:
     name: Build for Linux (Ubuntu)
     runs-on: ubuntu-latest
-    if: github.event.release.tag_name != 'v1.0'
 
     steps:
       - name: Check out code
@@ -106,7 +100,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build with PyInstaller
-        run: pyinstaller --onefile --noconsole --add-data "assets/window_bnwbook.png:." --name RGO_lib_parser src/rgo_lib_parser_by_b0s.py
+        run: pyinstaller --onefile --noconsole --add-data "assets/window_bnwbook.png:." --name RGO_lib_parser src/main.py
 
       - name: Upload Release Asset (Linux)
         uses: actions/upload-release-asset@v1

@@ -1,2 +1,0 @@
-Pillow==11.2.0
-Requests==2.32.3
