@@ -1,0 +1,27 @@
+'code: core':
+  - changed-files:
+    - any-glob-to-any-file: ['src/**/*.py']
+
+'code: tests':
+  - changed-files:
+    - any-glob-to-any-file: ['tests/**/*.py']
+
+'code: gui':
+  - changed-files:
+    - any-glob-to-any-file: ['src/gui.py']
+
+'ci/cd':
+  - changed-files:
+    - any-glob-to-any-file: ['.github/workflows/*.yml']
+
+'config':
+  - changed-files:
+    - any-glob-to-any-file: ['.pre-commit-config.yaml', 'pyproject.toml', 'tox.ini']
+
+'documentation':
+  - changed-files:
+    - any-glob-to-any-file: ['*.md', '*.bib']
+
+'dependencies':
+  - changed-files:
+    - any-glob-to-any-file: ['requirements*.txt', '*.toml', '*lock']
