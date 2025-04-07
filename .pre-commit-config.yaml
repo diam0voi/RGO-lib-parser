@@ -1,29 +1,31 @@
 repos:
--   repo: https://github.com/pre-commit/pre-commit-hooks
+  - repo: meta
+    hooks:
+      - id: check-hooks-apply
+      - id: check-useless-excludes
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
-    -   id: trailing-whitespace
-    -   id: end-of-file-fixer
-    -   id: check-yaml
-    -   id: check-added-large-files
-
--   repo: https://github.com/psf/black
-    rev: 24.4.2
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files 
+      - id: check-case-conflict
+      - id: check-merge-conflict
+   
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.5.0 # automatically updated by Commitizen
     hooks:
-    -   id: black
-        language_version: python3.13
+      - id: commitizen
+      - id: commitizen-branch
+        stages:
+          - post-commit
 
--   repo: https://github.com/PyCQA/flake8
-    rev: 7.1.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.4
     hooks:
-    -   id: flake8
-
--   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.10
-    hooks:
-    -   id: ruff
-      args: [--fix, --exit-non-zero-on-fix] # Автоматически исправлять и выходить с ошибкой, если исправления были
-
-flake8:
-  max-line-length: 88 # Согласовать с black
-  extend-ignore: E203, W503 # Ошибки, конфликтующие с black
+      - id: ruff-format
+      - id: ruff
+      args: [--fix, --exit-non-zero-on-fix]
+      
