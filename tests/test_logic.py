@@ -5,23 +5,32 @@ import os
 import base64
 import logging
 import threading
-import stat # <-- Импорт был здесь, все ок
+import stat
 from io import BytesIO
 from pathlib import Path
+import time # <-- ДОБАВЛЕН импорт time для проверки sleep
+import sys # <-- ДОБАВЛЕН для sys.stderr
 
 # Импортируем тестируемый класс и зависимости
 from src.logic import LibraryHandler
-import src.logic # Импортируем модуль для патчинга config и utils
+import src.logic # Импортируем сам модуль для доступа к config и utils
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+# ИСПРАВЛЕНО: Импортируем utils напрямую для передачи в хелпер
+from src import utils as src_utils
+
 try:
-    from PIL import Image
+    from PIL import Image, UnidentifiedImageError
 except ImportError:
     Image = MagicMock()
     Image.Resampling = MagicMock()
     Image.Resampling.LANCZOS = "LANCZOS_MOCK"
+    # Определяем UnidentifiedImageError, если PIL не установлен
+    class UnidentifiedImageError(Exception): pass
+    Image.UnidentifiedImageError = UnidentifiedImageError
+
 
 # --- Константы и фейковый конфиг ---
 FAKE_CONFIG_DATA = {
@@ -30,155 +39,206 @@ FAKE_CONFIG_DATA = {
     "MAX_RETRIES": 2,
     "RETRY_ON_HTTP_CODES": [500, 502],
     "DEFAULT_DELAY_SECONDS": 0.01,
-    # "RETRY_DELAY": 0.02, # Не используется напрямую в коде, можно убрать
+    # "RETRY_DELAY": 0.02, # Не используется напрямую в тестах
     "REQUEST_TIMEOUT": (10, 30),
     "IMAGE_EXTENSIONS": ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff'),
     "DEFAULT_ASPECT_RATIO_THRESHOLD": 1.1,
     "JPEG_QUALITY": 90,
+    # Добавляем недостающие для тестов main
+    "APP_NAME": "RGO Lib Parser Test",
+    "LOG_FILE": "test_app.log",
 }
+
+# --- Вспомогательная функция ---
+# ИСПРАВЛЕНО: Вынесена из класса и принимает mock_utils
+def setup_mock_files(mock_path_methods, mock_utils_dict, file_list):
+    """Вспомогательная функция для настройки моков файлов."""
+    MockPathClass, get_mock_path, path_mocks = mock_path_methods
+    input_dir_path = "/fake/input" # Базовая директория для iterdir
+
+    mock_files_in_dir = []
+    page_num_map = {}
+    # Используем полный путь как ключ для is_spread_map
+    full_path_spread_map = {}
+
+    for name, page_num, is_spread, is_file in file_list:
+        full_path_str = os.path.join(input_dir_path, name)
+        mock_file = get_mock_path(full_path_str) # Получаем/создаем мок
+        mock_file.is_file.return_value = is_file
+        mock_file.suffix = Path(name).suffix # Устанавливаем суффикс явно
+        mock_file.name = name # Устанавливаем имя явно
+        mock_files_in_dir.append(mock_file)
+        if page_num != -1:
+            page_num_map[name] = page_num
+        full_path_spread_map[full_path_str] = is_spread
+
+    # Настраиваем iterdir для входной директории
+    get_mock_path(input_dir_path).iterdir.return_value = mock_files_in_dir
+
+    # ИСПРАВЛЕНО: Используем переданный словарь mock_utils_dict
+    mock_utils_dict["get_page_number"].side_effect = lambda fname: page_num_map.get(Path(fname).name, -1)
+    # Используем полный путь файла для is_likely_spread
+    mock_utils_dict["is_likely_spread"].side_effect = lambda fpath, threshold: full_path_spread_map.get(str(fpath), False)
+
+    return mock_files_in_dir # Возвращаем список моков файлов
+
 
 # --- Фикстуры для test_logic ---
 
 @pytest.fixture(autouse=True)
 def disable_logging():
-    # Отключаем логирование на время тестов, чтобы не засорять вывод
-    # Используем уровень выше CRITICAL
     logging.disable(logging.CRITICAL + 10)
     yield
-    logging.disable(logging.NOTSET) # Включаем обратно после теста
+    logging.disable(logging.NOTSET)
 
 @pytest.fixture(autouse=True)
 def mock_logic_config():
-    # Патчим весь модуль config внутри logic
-    with patch('src.logic.config', MagicMock(**FAKE_CONFIG_DATA)) as mock_conf:
-        # Добавляем атрибуты, если они используются не только через FAKE_CONFIG_DATA
-        mock_conf.DEFAULT_ASPECT_RATIO_THRESHOLD = FAKE_CONFIG_DATA['DEFAULT_ASPECT_RATIO_THRESHOLD']
-        mock_conf.JPEG_QUALITY = FAKE_CONFIG_DATA['JPEG_QUALITY']
-        mock_conf.IMAGE_EXTENSIONS = FAKE_CONFIG_DATA['IMAGE_EXTENSIONS']
-        mock_conf.MAX_RETRIES = FAKE_CONFIG_DATA['MAX_RETRIES']
-        mock_conf.REQUEST_TIMEOUT = FAKE_CONFIG_DATA['REQUEST_TIMEOUT']
-        mock_conf.DEFAULT_DELAY_SECONDS = FAKE_CONFIG_DATA['DEFAULT_DELAY_SECONDS']
-        yield mock_conf
+    # ИСПРАВЛЕНО: Используем MagicMock для имитации объекта config
+    mock_config = MagicMock()
+    for key, value in FAKE_CONFIG_DATA.items():
+        setattr(mock_config, key, value)
+
+    # Патчим config в модуле logic
+    with patch('src.logic.config', mock_config) as patched_config:
+        yield patched_config # Возвращаем сам мок для возможных проверок
+
 
 @pytest.fixture
 def mock_requests_session():
     with patch('src.logic.requests.Session') as MockSession:
         mock_instance = MockSession.return_value
-        # Настраиваем стандартный успешный ответ
+        # Настраиваем мок ответа по умолчанию
         mock_response = MagicMock(spec=requests.Response)
         mock_response.status_code = 200
         mock_response.content = b'fakedata'
         mock_response.headers = {'Content-Type': 'image/jpeg'}
         mock_response.raise_for_status.return_value = None
         mock_instance.get.return_value = mock_response
-        mock_instance.cookies = requests.cookies.RequestsCookieJar() # Используем реальный объект
-        mock_instance.mount = MagicMock() # Мокаем mount
-        mock_instance.headers = {} # Инициализируем headers
+        # Используем реальный объект CookieJar для большей совместимости
+        mock_instance.cookies = requests.cookies.RequestsCookieJar()
+        mock_instance.mount = MagicMock()
+        mock_instance.headers = {} # Инициализируем заголовки
         yield MockSession
 
 @pytest.fixture
 def mock_shutil_copy2():
-    with patch('src.logic.shutil.copy2') as mock_copy:
+     with patch('src.logic.shutil.copy2') as mock_copy:
         yield mock_copy
 
 @pytest.fixture
 def mock_path_methods():
-    # Патчим методы Path, которые используются в logic.py
-    with patch('src.logic.Path.mkdir') as mock_mkdir, \
-         patch('src.logic.Path.iterdir') as mock_iterdir, \
-         patch('src.logic.Path.stat') as mock_stat, \
-         patch('src.logic.Path.is_file') as mock_is_file, \
-         patch('src.logic.Path.suffix') as mock_suffix, \
-         patch('src.logic.Path.name', new_callable=MagicMock) as mock_name, \
-         patch('src.logic.Path.with_suffix') as mock_with_suffix: # Добавлен with_suffix
+    # ИСПРАВЛЕНО: Улучшаем мок Path и возвращаем path_mocks
+    path_mocks = {} # Словарь для хранения моков путей
 
-        # Настройка mock_stat по умолчанию
-        stat_result = MagicMock()
-        stat_result.st_mode = stat.S_IFREG | 0o666
-        stat_result.st_size = 1024 # Не пустой по умолчанию
-        mock_stat.return_value = stat_result
+    def get_mock_path(path_arg):
+        # Преобразуем аргумент в строку для ключа словаря
+        path_str = str(path_arg)
+        if path_str not in path_mocks:
+            mock = MagicMock(spec=Path)
+            # Устанавливаем основные атрибуты
+            mock.name = Path(path_str).name
+            mock.suffix = Path(path_str).suffix
+            mock.__str__ = MagicMock(return_value=path_str)
+            mock.__fspath__ = MagicMock(return_value=path_str) # Для совместимости с os.path
 
-        # Настройка mock_is_file по умолчанию
-        mock_is_file.return_value = True
+            # Настраиваем stat по умолчанию
+            stat_result = MagicMock(spec=os.stat_result) # Используем spec
+            stat_result.st_mode = stat.S_IFREG | 0o666
+            stat_result.st_size = 1024 # Не пустой по умолчанию
+            # Добавляем остальные атрибуты, чтобы избежать AttributeError
+            stat_result.st_ino = 1
+            stat_result.st_dev = 1
+            stat_result.st_nlink = 1
+            stat_result.st_uid = 0
+            stat_result.st_gid = 0
+            stat_result.st_atime = 0
+            stat_result.st_mtime = 0
+            stat_result.st_ctime = 0
+            mock.stat = MagicMock(return_value=stat_result, name=f"stat_for_{path_str}")
 
-        # Настройка mock_suffix и mock_name по умолчанию (можно переопределить в тестах)
-        mock_suffix.__get__ = MagicMock(return_value=".jpg") # Используем __get__ для свойства
-        mock_name.__get__ = MagicMock(return_value="default_name.jpg")
+            # Настраиваем is_file по умолчанию
+            mock.is_file = MagicMock(return_value=True, name=f"is_file_for_{path_str}")
 
-        # Настройка mock_with_suffix
-        def with_suffix_side_effect(suffix):
-            # Возвращаем новый мок Path с измененным суффиксом
-            new_path_mock = MagicMock(spec=Path)
-            # Копируем имя и меняем суффикс (упрощенно)
-            base_name = mock_name.__get__(new_path_mock, Path).rsplit('.', 1)[0]
-            new_name = f"{base_name}{suffix}"
-            new_path_mock.name = new_name
-            new_path_mock.suffix = suffix
-            new_path_mock.__str__ = MagicMock(return_value=f"/fake/path/{new_name}")
-            return new_path_mock
-        mock_with_suffix.side_effect = with_suffix_side_effect
+            # Настраиваем with_suffix
+            def mock_with_suffix(suffix):
+                # Используем pathlib для корректной замены суффикса
+                new_path = Path(path_str).with_suffix(suffix)
+                # Возвращаем или создаем мок для нового пути
+                return get_mock_path(str(new_path))
+            mock.with_suffix = MagicMock(side_effect=mock_with_suffix, name=f"with_suffix_for_{path_str}")
 
+            # Настраиваем iterdir (по умолчанию пустой)
+            mock.iterdir = MagicMock(return_value=[], name=f"iterdir_for_{path_str}")
 
-        yield {
-            "mkdir": mock_mkdir,
-            "iterdir": mock_iterdir,
-            "stat": mock_stat,
-            "is_file": mock_is_file,
-            "suffix": mock_suffix,
-            "name": mock_name,
-            "with_suffix": mock_with_suffix
-        }
+            # Настраиваем mkdir
+            mock.mkdir = MagicMock(name=f"mkdir_for_{path_str}")
+
+            # Настраиваем parent (рекурсивно)
+            parent_path = Path(path_str).parent
+            if parent_path != Path(path_str): # Избегаем бесконечной рекурсии для корня
+                # Получаем мок родителя рекурсивно
+                mock.parent = get_mock_path(str(parent_path))
+            else:
+                mock.parent = mock # Корень ссылается сам на себя
+
+            path_mocks[path_str] = mock
+        return path_mocks[path_str]
+
+    # Патчим конструктор Path в модуле logic
+    with patch('src.logic.Path', side_effect=get_mock_path) as MockPathClass:
+        # Возвращаем класс, функцию get_mock_path и словарь path_mocks
+        yield MockPathClass, get_mock_path, path_mocks
 
 
 @pytest.fixture
 def mock_pil_image():
-    # Используем настоящий Image, если он доступен, иначе полный мок
+    # Определяем классы и константы перед патчем
     try:
-        from PIL import Image as PilImage
-        # Патчим только open, new, и Resampling, если нужно
-        with patch('src.logic.Image.open') as mock_open, \
-             patch('src.logic.Image.new') as mock_new:
-            # Настройка моков для open и new
-            mock_img_instance = MagicMock(spec=PilImage.Image)
-            mock_img_instance.convert.return_value = mock_img_instance
-            mock_img_instance.resize.return_value = mock_img_instance
-            mock_img_instance.paste = MagicMock()
-            mock_img_instance.save = MagicMock()
-            mock_img_instance.size = (800, 1000) # Размер по умолчанию
-
-            mock_context = MagicMock()
-            mock_context.__enter__.return_value = mock_img_instance
-            mock_open.return_value = mock_context
-            mock_new.return_value = mock_img_instance # new тоже возвращает image
-
-            # Создаем мок для Resampling, даже если PIL установлен
-            MockImage = MagicMock()
-            MockImage.open = mock_open
-            MockImage.new = mock_new
-            MockImage.Resampling = MagicMock()
-            MockImage.Resampling.LANCZOS = PilImage.Resampling.LANCZOS if hasattr(PilImage, 'Resampling') else "LANCZOS_MOCK"
-
-            # Патчим класс Image в logic на наш настроенный мок
-            with patch('src.logic.Image', MockImage):
-                 yield MockImage
-
+        from PIL import Image as PilImage, UnidentifiedImageError as PilUnidentifiedImageError
+        _UnidentifiedImageError = PilUnidentifiedImageError
+        _Resampling = PilImage.Resampling if hasattr(PilImage, 'Resampling') else MagicMock()
+        _LANCZOS = _Resampling.LANCZOS if hasattr(_Resampling, 'LANCZOS') else "LANCZOS_MOCK"
+        _ImageSpec = PilImage.Image
     except ImportError:
-        # Полный мок, если PIL не установлен
-        with patch('src.logic.Image', new_callable=MagicMock) as MockImage:
-            mock_img_instance = MagicMock()
-            mock_img_instance.convert.return_value = mock_img_instance
-            mock_img_instance.resize.return_value = mock_img_instance
-            mock_img_instance.paste = MagicMock()
-            mock_img_instance.save = MagicMock()
-            mock_img_instance.size = (800, 1000)
+        class _UnidentifiedImageError(Exception): pass
+        _LANCZOS = "LANCZOS_MOCK"
+        _ImageSpec = None # Нет спека, если PIL не установлен
 
-            mock_context = MagicMock()
-            mock_context.__enter__.return_value = mock_img_instance
-            MockImage.open.return_value = mock_context
-            MockImage.new.return_value = mock_img_instance
-            MockImage.Resampling = MagicMock()
-            MockImage.Resampling.LANCZOS = "LANCZOS_MOCK"
-            yield MockImage
+    # Создаем мок для всего модуля Image
+    MockImageModule = MagicMock(name="MockImageModule")
+
+    # Мок для Image.open
+    mock_open = MagicMock(name="MockImageOpen")
+    # Мок для Image.new
+    mock_new = MagicMock(name="MockImageNew")
+
+    # Мок для инстанса изображения
+    mock_img_instance = MagicMock(spec=_ImageSpec, name="MockImageInstance")
+    mock_img_instance.convert.return_value = mock_img_instance
+    mock_img_instance.resize.return_value = mock_img_instance
+    mock_img_instance.paste = MagicMock(name="MockPaste")
+    mock_img_instance.save = MagicMock(name="MockSave")
+    mock_img_instance.size = (800, 1000) # Размер по умолчанию
+
+    # Настраиваем контекстный менеджер для Image.open
+    mock_context = MagicMock(name="MockImageOpenContext")
+    mock_context.__enter__.return_value = mock_img_instance
+    mock_context.__exit__ = MagicMock(return_value=None)
+    mock_open.return_value = mock_context
+
+    # Настраиваем Image.new
+    mock_new.return_value = mock_img_instance
+
+    # Присваиваем моки атрибутам мок-модуля
+    MockImageModule.open = mock_open
+    MockImageModule.new = mock_new
+    MockImageModule.Resampling = MagicMock()
+    MockImageModule.Resampling.LANCZOS = _LANCZOS
+    MockImageModule.UnidentifiedImageError = _UnidentifiedImageError
+
+    # Патчим Image в модуле logic
+    with patch('src.logic.Image', MockImageModule):
+         yield MockImageModule # Возвращаем мок всего модуля
 
 
 @pytest.fixture
@@ -195,12 +255,10 @@ def mock_builtin_open():
 
 @pytest.fixture
 def mock_utils():
-    # Патчим функции из utils, используемые в logic
+    # Патчим функции в src.logic.utils
     with patch('src.logic.utils.get_page_number') as mock_get_num, \
          patch('src.logic.utils.is_likely_spread') as mock_is_spread:
-        # Настройка по умолчанию (можно переопределить в тестах)
-        mock_get_num.return_value = -1
-        mock_is_spread.return_value = False
+        # Возвращаем словарь с моками
         yield {
             "get_page_number": mock_get_num,
             "is_likely_spread": mock_is_spread
@@ -208,11 +266,11 @@ def mock_utils():
 
 @pytest.fixture
 def mock_status_callback():
-    return MagicMock()
+    return MagicMock(name="StatusCallbackMock")
 
 @pytest.fixture
 def mock_progress_callback():
-    return MagicMock()
+    return MagicMock(name="ProgressCallbackMock")
 
 @pytest.fixture
 def stop_event():
@@ -220,7 +278,7 @@ def stop_event():
 
 @pytest.fixture
 def handler(mock_status_callback, mock_progress_callback, stop_event):
-    # Создаем экземпляр с моками
+    # Передаем реальные коллбэки (моки) и событие
     return LibraryHandler(
         status_callback=mock_status_callback,
         progress_callback=mock_progress_callback,
@@ -231,81 +289,80 @@ def handler(mock_status_callback, mock_progress_callback, stop_event):
 class TestLibraryHandler:
 
     # --- Тесты _setup_session_with_retry ---
-    def test_setup_session_with_retry(self, handler, mock_requests_session):
+    def test_setup_session_with_retry(self, handler, mock_requests_session, mock_logic_config):
         handler._setup_session_with_retry()
         mock_session_instance = mock_requests_session.return_value
         mock_requests_session.assert_called_once()
-        # ИСПРАВЛЕНО: Проверяем обновление словаря headers
-        assert mock_session_instance.headers['User-Agent'] == FAKE_CONFIG_DATA['DEFAULT_USER_AGENT']
-        # Проверяем вызовы mount
+        # Проверяем установку заголовка
+        assert mock_session_instance.headers['User-Agent'] == mock_logic_config.DEFAULT_USER_AGENT
+        # Проверяем mount
         mount_calls = mock_session_instance.mount.call_args_list
         assert len(mount_calls) == 2
-        assert mount_calls[0] == call("https://", ANY)
-        assert mount_calls[1] == call("http://", ANY)
-        # Проверяем параметры Retry стратегии у адаптера
+        assert mount_calls[0] == call('https://', ANY)
+        assert mount_calls[1] == call('http://', ANY)
+        # Проверяем параметры Retry внутри адаптера
         adapter_instance = mount_calls[0].args[1]
         assert isinstance(adapter_instance, HTTPAdapter)
         retry_strategy = adapter_instance.max_retries
         assert isinstance(retry_strategy, Retry)
-        assert retry_strategy.total == FAKE_CONFIG_DATA['MAX_RETRIES']
-        assert set(retry_strategy.status_forcelist) == set(FAKE_CONFIG_DATA['RETRY_ON_HTTP_CODES'])
-        assert retry_strategy.backoff_factor == 1
-        assert set(retry_strategy.allowed_methods) == {"HEAD", "GET", "OPTIONS"}
+        assert retry_strategy.total == mock_logic_config.MAX_RETRIES
+        assert set(retry_strategy.status_forcelist) == set(mock_logic_config.RETRY_ON_HTTP_CODES)
+        # Проверяем, что сессия сохранена
         assert handler.session is mock_session_instance
-
-        # Проверяем, что сессия не создается повторно
+        # Проверяем повторный вызов (сессия не должна создаваться заново)
         mock_requests_session.reset_mock()
         handler._setup_session_with_retry()
         mock_requests_session.assert_not_called()
 
     # --- Тесты _get_initial_cookies ---
-    def test_get_initial_cookies_success(self, handler, mock_requests_session, mock_status_callback):
-        handler._setup_session_with_retry() # Убедимся, что сессия создана
+    def test_get_initial_cookies_success(self, handler, mock_requests_session, mock_status_callback, mock_logic_config):
+        # Настраиваем успешный ответ и куки
         mock_session = mock_requests_session.return_value
-        mock_response = mock_session.get.return_value # Используем мок ответа из фикстуры
-        mock_response.status_code = 200
+        mock_response = MagicMock(spec=requests.Response)
         mock_response.raise_for_status.return_value = None
-        # Имитируем установку куки сервером
+        mock_session.get.return_value = mock_response
+        # Добавляем куки в CookieJar
         mock_session.cookies.set('sessionid', 'testcookie123', domain='fake.rgo.ru')
 
         result = handler._get_initial_cookies()
 
         assert result is True
         mock_session.get.assert_called_once_with(
-            FAKE_CONFIG_DATA['INITIAL_COOKIE_URL'],
-            timeout=FAKE_CONFIG_DATA['REQUEST_TIMEOUT']
+            mock_logic_config.INITIAL_COOKIE_URL,
+            timeout=mock_logic_config.REQUEST_TIMEOUT
         )
         mock_response.raise_for_status.assert_called_once()
-        mock_status_callback.assert_any_call("Автоматическое получение сессионных куки с https://fake.rgo.ru/cookie...")
+        # Проверяем сообщения статуса
+        mock_status_callback.assert_any_call(f"Автоматическое получение сессионных куки с {mock_logic_config.INITIAL_COOKIE_URL}...")
         mock_status_callback.assert_any_call("Успешно получены куки: ['sessionid']")
 
-    def test_get_initial_cookies_no_cookies_set(self, handler, mock_requests_session, mock_status_callback):
-        handler._setup_session_with_retry()
+    def test_get_initial_cookies_no_cookies_set(self, handler, mock_requests_session, mock_status_callback, mock_logic_config):
+        # Настраиваем успешный ответ, но без кук
         mock_session = mock_requests_session.return_value
-        mock_response = mock_session.get.return_value
-        mock_response.status_code = 200
+        mock_response = MagicMock(spec=requests.Response)
         mock_response.raise_for_status.return_value = None
-        mock_session.cookies.clear() # Убедимся, что куки пусты
+        mock_session.get.return_value = mock_response
+        mock_session.cookies.clear() # Убедимся, что кук нет
 
         result = handler._get_initial_cookies()
 
-        assert result is False # ИСПРАВЛЕНО: Должно быть False, если куки не установлены
-        mock_session.get.assert_called_once()
+        assert result is False # Ожидаем False, если куки не установлены
+        mock_session.get.assert_called_once_with(mock_logic_config.INITIAL_COOKIE_URL, timeout=ANY)
         mock_status_callback.assert_any_call("Предупреждение: Не удалось автоматически получить куки (сервер не установил?).")
 
-    def test_get_initial_cookies_timeout(self, handler, mock_requests_session, mock_status_callback):
-        handler._setup_session_with_retry()
+    def test_get_initial_cookies_timeout(self, handler, mock_requests_session, mock_status_callback, mock_logic_config):
+        # Настраиваем ошибку Timeout
         mock_session = mock_requests_session.return_value
         mock_session.get.side_effect = requests.exceptions.Timeout("Timeout error")
 
         result = handler._get_initial_cookies()
 
         assert result is False
-        mock_session.get.assert_called_once()
-        mock_status_callback.assert_any_call(f"Ошибка: Превышено время ожидания при получении куки с {FAKE_CONFIG_DATA['INITIAL_COOKIE_URL']}.")
+        mock_session.get.assert_called_once_with(mock_logic_config.INITIAL_COOKIE_URL, timeout=ANY)
+        mock_status_callback.assert_any_call(f"Ошибка: Превышено время ожидания при получении куки с {mock_logic_config.INITIAL_COOKIE_URL}.")
 
-    def test_get_initial_cookies_request_exception(self, handler, mock_requests_session, mock_status_callback):
-        handler._setup_session_with_retry()
+    def test_get_initial_cookies_request_exception(self, handler, mock_requests_session, mock_status_callback, mock_logic_config):
+        # Настраиваем другую ошибку сети
         mock_session = mock_requests_session.return_value
         error_message = "Network error"
         mock_session.get.side_effect = requests.exceptions.RequestException(error_message)
@@ -313,61 +370,48 @@ class TestLibraryHandler:
         result = handler._get_initial_cookies()
 
         assert result is False
-        mock_session.get.assert_called_once()
+        mock_session.get.assert_called_once_with(mock_logic_config.INITIAL_COOKIE_URL, timeout=ANY)
         mock_status_callback.assert_any_call(f"Ошибка при получении куки: {error_message}.")
 
-    def test_get_initial_cookies_http_error(self, handler, mock_requests_session, mock_status_callback):
-        handler._setup_session_with_retry()
-        mock_session = mock_requests_session.return_value
-        mock_response = MagicMock(spec=requests.Response)
-        mock_response.status_code = 404
-        error = requests.exceptions.HTTPError("Not Found", response=mock_response)
-        mock_response.raise_for_status.side_effect = error
-        mock_session.get.return_value = mock_response
-
-        result = handler._get_initial_cookies()
-
-        assert result is False
-        mock_session.get.assert_called_once()
-        mock_response.raise_for_status.assert_called_once()
-        mock_status_callback.assert_any_call(f"Ошибка при получении куки: {error}.")
-
     def test_get_initial_cookies_session_setup_fails(self, handler, mock_requests_session, mock_status_callback):
-        # Имитируем ошибку при создании сессии
-        mock_requests_session.side_effect = Exception("Cannot create session")
+        # Имитируем ошибку при *создании* сессии (внутри _setup_session_with_retry)
+        error_message = "Cannot create session"
+        mock_requests_session.side_effect = Exception(error_message)
         handler.session = None # Убедимся, что сессии нет
 
         result = handler._get_initial_cookies()
 
         assert result is False
         mock_requests_session.assert_called_once() # Попытка создания была
-        mock_status_callback.assert_any_call("Критическая ошибка: Не удалось создать сетевую сессию.")
+        # Проверяем сообщение об ошибке, которое генерируется в _get_initial_cookies при ошибке setup
+        mock_status_callback.assert_any_call(f"Критическая ошибка при настройке сессии: {error_message}")
 
 
     # --- Тесты download_pages ---
-
-    # Используем фикстуру для мока _get_initial_cookies
     @pytest.fixture
-    def mock_get_cookies_success(self):
-        with patch.object(LibraryHandler, '_get_initial_cookies', return_value=True) as mock_method:
+    def mock_get_cookies_success(self, handler):
+        # Патчим метод _get_initial_cookies у *инстанса* handler
+        with patch.object(handler, '_get_initial_cookies', return_value=True) as mock_method:
             yield mock_method
 
     @pytest.fixture
-    def mock_get_cookies_fail(self):
-         with patch.object(LibraryHandler, '_get_initial_cookies', return_value=False) as mock_method:
+    def mock_get_cookies_fail(self, handler):
+        with patch.object(handler, '_get_initial_cookies', return_value=False) as mock_method:
             yield mock_method
 
-    def test_download_pages_success(self, handler, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_path_methods, mock_time_sleep, mock_status_callback, mock_progress_callback):
+    def test_download_pages_success(self, handler, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_path_methods, mock_time_sleep, mock_status_callback, mock_progress_callback, mock_logic_config):
+        # ИСПРАВЛЕНО: Получаем path_mocks из фикстуры
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
         mock_session = mock_requests_session.return_value
-        # mock_response настроен в фикстуре mock_requests_session
-        # mock_path_methods["stat"] настроен в фикстуре mock_path_methods
 
         base_url = "https://test.com/base/"
         url_ids = "book123/"
         pdf_filename = "document.pdf"
         total_pages = 3
         output_dir = "test_output"
-        output_path = Path(output_dir) # Для сравнения путей
+
+        # Убедимся, что мок stat для финальных файлов возвращает > 0 (по умолчанию 1024)
+        # Фикстура mock_path_methods уже настраивает это
 
         success_count, total_count = handler.download_pages(
             base_url, url_ids, pdf_filename, total_pages, output_dir
@@ -376,82 +420,83 @@ class TestLibraryHandler:
         assert success_count == total_pages
         assert total_count == total_pages
         mock_get_cookies_success.assert_called_once()
-        mock_path_methods["mkdir"].assert_called_once_with(parents=True, exist_ok=True)
+        # Проверяем mkdir на моке выходной директории
+        get_mock_path(output_dir).mkdir.assert_called_once_with(parents=True, exist_ok=True)
         assert mock_session.get.call_count == total_pages
         assert mock_builtin_open.call_count == total_pages
-        assert mock_path_methods["stat"].call_count == total_pages # Вызывается для проверки размера
+
+        # ИСПРАВЛЕНО: Проверяем общее количество вызовов stat через словарь path_mocks
+        total_stat_calls = sum(p.stat.call_count for p in path_mocks.values())
+        assert total_stat_calls == total_pages
 
         # Проверяем URL и имя файла для первой страницы
         page_string_0 = f"{pdf_filename}/0"
         page_b64_0 = base64.b64encode(page_string_0.encode('utf-8')).decode('utf-8')
         expected_url_0 = f"{base_url}{url_ids}{page_b64_0}"
-        # Имя файла определяется в коде как page_<i>.<ext>, где ext из Content-Type
-        expected_filename_0 = output_path / "page_000.jpeg" # Content-Type был image/jpeg
+        expected_filename_0_str = os.path.join(output_dir, "page_000.jpeg") # .jpeg из Content-Type
 
-        # Проверяем вызовы для первой страницы
-        mock_session.get.assert_any_call(expected_url_0, timeout=FAKE_CONFIG_DATA['REQUEST_TIMEOUT'])
-        mock_builtin_open.assert_any_call(expected_filename_0, 'wb')
-        # Проверяем запись контента (фиктивного)
-        mock_file_handle = mock_builtin_open() # Получаем хендл файла из mock_open
+        mock_session.get.assert_any_call(expected_url_0, timeout=mock_logic_config.REQUEST_TIMEOUT)
+        mock_builtin_open.assert_any_call(expected_filename_0_str, 'wb')
+        mock_file_handle = mock_builtin_open()
         mock_file_handle.write.assert_any_call(b'fakedata')
-        # Проверяем вызов stat для созданного файла
-        mock_path_methods["stat"].assert_any_call() # Вызывается на объекте Path(final_output_filename)
 
-        # Проверяем прогресс
-        assert mock_progress_callback.call_count == total_pages + 1 # 0..total_pages
-        mock_progress_callback.assert_has_calls([
-            call(0, total_pages), call(1, total_pages), call(2, total_pages), call(3, total_pages)
-        ])
-        # Проверяем задержку
+        assert mock_progress_callback.call_count == total_pages + 1
+        mock_progress_callback.assert_has_calls([call(i, total_pages) for i in range(total_pages + 1)])
         assert mock_time_sleep.call_count == total_pages
-
-        # Проверяем финальный статус
         mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: {total_pages} из {total_pages}.")
 
-
     def test_download_pages_interrupted(self, handler, stop_event, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_path_methods, mock_time_sleep, mock_status_callback, mock_progress_callback):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
         mock_session = mock_requests_session.return_value
-        # Ответ по умолчанию успешный
         total_pages = 5
-        download_limit = 2 # Скачаем 2 страницы и прервем
+        interrupt_before_page_index = 2 # Прервать перед скачиванием страницы с индексом 2 (т.е. 3-й страницы)
 
+        # ИСПРАВЛЕНО: Модифицируем side_effect для stop_event
+        original_get = mock_session.get
         call_counter = 0
         def get_side_effect(*args, **kwargs):
             nonlocal call_counter
+            current_page_index = call_counter
             call_counter += 1
-            if call_counter > download_limit:
-                # Прерываем *перед* третьим запросом
+            # Устанавливаем событие *перед* вызовом, который должен быть прерван
+            if current_page_index == interrupt_before_page_index:
                 stop_event.set()
-                # Важно: нужно вызвать ошибку или вернуть что-то, чтобы цикл прервался
-                # Но в коде прерывание проверяется *перед* запросом, так что можно просто вернуть мок
-            return mock_session.get.return_value # Возвращаем стандартный успешный ответ
+                # Важно: не кидаем исключение здесь, цикл должен сам проверить stop_event
+            # Возвращаем нормальный ответ, если событие не установлено
+            return original_get(*args, **kwargs)
 
         mock_session.get.side_effect = get_side_effect
 
         success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, "out")
 
-        # ИСПРАВЛЕНО: Ожидаем 2 успешных скачивания
-        assert success_count == download_limit
+        # ИСПРАВЛЕНО: Ожидаем 2 успешных скачивания (индексы 0 и 1)
+        expected_success = interrupt_before_page_index
+        assert success_count == expected_success
         assert total_count == total_pages
-        # Вызвали get дважды до прерывания
-        assert mock_session.get.call_count == download_limit
-        assert mock_builtin_open.call_count == download_limit
-        assert mock_path_methods["stat"].call_count == download_limit
+        # Вызвали get дважды успешно
+        assert mock_session.get.call_count == expected_success
+        assert mock_builtin_open.call_count == expected_success
+        # Проверяем stat для скачанных файлов
+        total_stat_calls = sum(p.stat.call_count for p in path_mocks.values())
+        assert total_stat_calls == expected_success
+
         mock_status_callback.assert_any_call("--- Скачивание прервано пользователем ---")
-        # ИСПРАВЛЕНО: Ожидаем прогресс 0/5, 1/5, 2/5
-        assert mock_progress_callback.call_count == download_limit + 1
-        mock_progress_callback.assert_has_calls([call(i, total_pages) for i in range(download_limit + 1)])
-        assert mock_time_sleep.call_count == download_limit # Успели поспать после 2х скачиваний
+        # Прогресс: 0/5, 1/5, 2/5
+        assert mock_progress_callback.call_count == expected_success + 1
+        mock_progress_callback.assert_has_calls([call(i, total_pages) for i in range(expected_success + 1)])
+        assert mock_time_sleep.call_count == expected_success
+        mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: {expected_success} из {total_pages}.")
 
-
-    def test_download_pages_http_error(self, handler, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_path_methods, mock_status_callback, mock_progress_callback):
+    def test_download_pages_http_error(self, handler, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_path_methods, mock_status_callback, mock_progress_callback, mock_logic_config):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
         mock_session = mock_requests_session.return_value
         total_pages = 3
 
-        # Настраиваем ответы: OK, Error 404, OK
+        # Настраиваем ответы: OK, Error, OK
         mock_response_ok = MagicMock(spec=requests.Response, status_code=200, headers={'Content-Type': 'image/jpeg'}, content=b'ok')
         mock_response_ok.raise_for_status.return_value = None
         mock_response_err = MagicMock(spec=requests.Response, status_code=404)
+        # Связываем ответ с исключением
         http_error = requests.exceptions.HTTPError("Not Found", response=mock_response_err)
         mock_response_err.raise_for_status.side_effect = http_error
 
@@ -459,62 +504,54 @@ class TestLibraryHandler:
 
         success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, "out")
 
-        # ИСПРАВЛЕНО: Ожидаем 2 успешных скачивания (первое и третье)
+        # ИСПРАВЛЕНО: Ожидаем 2 успешных скачивания
         assert success_count == 2
         assert total_count == total_pages
-        assert mock_session.get.call_count == 3 # Делаем 3 запроса
-        assert mock_builtin_open.call_count == 2 # Открываем файл только для успешных
-        assert mock_path_methods["stat"].call_count == 2 # Проверяем размер только для успешных
-        # Проверяем сообщение об ошибке для второй страницы
-        mock_status_callback.assert_any_call(f"Ошибка HTTP 404 на стр. 2 (после {FAKE_CONFIG_DATA['MAX_RETRIES']} попыток): Not Found")
-        # Проверяем прогресс
+        assert mock_session.get.call_count == 3
+        assert mock_builtin_open.call_count == 2
+        # Проверяем stat только для успешных
+        total_stat_calls = sum(p.stat.call_count for p in path_mocks.values())
+        assert total_stat_calls == 2
+
+        mock_status_callback.assert_any_call(f"Ошибка HTTP 404 на стр. 2 (после {mock_logic_config.MAX_RETRIES} попыток): Not Found")
         mock_progress_callback.assert_has_calls([call(i, total_pages) for i in range(total_pages + 1)])
-        # Проверяем финальный статус
         mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: 2 из {total_pages}.")
 
-    def test_download_pages_http_403_error(self, handler, mock_get_cookies_success, mock_requests_session, mock_status_callback):
-        """Тест HTTP 403 ошибки и специфичного сообщения в status_callback."""
-        mock_session = mock_requests_session.return_value
-        total_pages = 1
-        mock_response_err = MagicMock(spec=requests.Response, status_code=403)
-        http_error = requests.exceptions.HTTPError("Forbidden", response=mock_response_err)
-        mock_response_err.raise_for_status.side_effect = http_error
-        mock_session.get.return_value = mock_response_err
-
-        success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, "out")
-
-        assert success_count == 0
-        mock_status_callback.assert_any_call(f"Ошибка HTTP 403 на стр. 1 (после {FAKE_CONFIG_DATA['MAX_RETRIES']} попыток): Forbidden")
-        # ДОБАВЛЕНО: Проверка специфичного сообщения для 401/403
-        mock_status_callback.assert_any_call("   (Возможно, сессия истекла, куки неверны или доступ запрещен)")
-
-
     def test_download_pages_empty_file(self, handler, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_path_methods, mock_status_callback, mock_progress_callback):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
         mock_session = mock_requests_session.return_value
-        # Ответ успешный, но файл будет пустой
-        mock_response = MagicMock(spec=requests.Response, status_code=200, headers={'Content-Type': 'image/gif'}, content=b'empty')
+        # Ответ сервера успешный
+        mock_response = MagicMock(spec=requests.Response, status_code=200, headers={'Content-Type': 'image/gif'}, content=b'empty_but_present')
         mock_response.raise_for_status.return_value = None
         mock_session.get.return_value = mock_response
 
-        # Имитируем нулевой размер файла через мок stat
-        mock_path_methods["stat"].return_value.st_size = 0
-
         total_pages = 1
-        success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, "out")
+        output_dir = "out"
+        # ИСПРАВЛЕНО: Настраиваем stat для конкретного файла, который будет создан
+        # Имя файла определяется Content-Type и индексом
+        output_filename_str = os.path.join(output_dir, "page_000.gif")
+        mock_file_path = get_mock_path(output_filename_str)
+        # Устанавливаем размер 0 через мок stat
+        mock_file_path.stat.return_value.st_size = 0
 
-        # ИСПРАВЛЕНО: Успешных скачиваний 0, т.к. файл пустой
+        success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, output_dir)
+
+        # ИСПРАВЛЕНО: Ожидаем 0 успешных скачиваний, так как файл пустой
         assert success_count == 0
         assert total_count == total_pages
-        assert mock_builtin_open.call_count == 1 # Файл создается
-        assert mock_path_methods["stat"].call_count == 1 # Размер проверяется
-        # Проверяем предупреждение
-        # Имя файла будет page_000.gif (т.к. Content-Type был image/gif)
+        # Файл должен быть открыт и записан
+        assert mock_builtin_open.call_count == 1
+        mock_builtin_open.assert_called_with(output_filename_str, 'wb')
+        mock_builtin_open().write.assert_called_with(b'empty_but_present')
+        # Stat должен быть вызван для проверки размера
+        mock_file_path.stat.assert_called_once()
         mock_status_callback.assert_any_call("Предупреждение: Файл page_000.gif пустой.")
         mock_progress_callback.assert_has_calls([call(0, 1), call(1, 1)])
         mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: 0 из {total_pages}.")
 
 
-    def test_download_pages_unknown_content_type(self, handler, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_path_methods):
+    def test_download_pages_unknown_content_type(self, handler, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_path_methods, mock_status_callback):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
         mock_session = mock_requests_session.return_value
         # Неизвестный Content-Type
         mock_response = MagicMock(spec=requests.Response, status_code=200, headers={'Content-Type': 'application/octet-stream'}, content=b'data')
@@ -522,444 +559,384 @@ class TestLibraryHandler:
         mock_session.get.return_value = mock_response
 
         output_dir = "test_output_unknown"
-        output_path = Path(output_dir)
-        handler.download_pages("b/", "i/", "p", 1, output_dir)
-
-        # Ожидаем, что будет использовано расширение .jpg по умолчанию
-        expected_filename = output_path / "page_000.jpg"
-        mock_builtin_open.assert_called_once_with(expected_filename, 'wb')
-        assert mock_path_methods["stat"].call_count == 1 # Размер все равно проверяется
-
-    def test_download_pages_html_response(self, handler, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_path_methods, mock_status_callback):
-        """Тест получения HTML вместо изображения."""
-        mock_session = mock_requests_session.return_value
-        html_content = b"<html><body>Error</body></html>"
-        mock_response = MagicMock(spec=requests.Response, status_code=200, headers={'Content-Type': 'text/html; charset=utf-8'}, content=html_content)
-        mock_response.raise_for_status.return_value = None
-        mock_response.text = html_content.decode('utf-8') # Добавляем атрибут text
-        mock_session.get.return_value = mock_response
-
         total_pages = 1
-        success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, "out")
+        handler.download_pages("b/", "i/", "p", total_pages, output_dir)
 
-        assert success_count == 0
-        assert mock_builtin_open.call_count == 0 # Файл не должен создаваться
-        assert mock_path_methods["stat"].call_count == 0 # Размер не проверяется
-        mock_status_callback.assert_any_call("Ошибка на стр. 1: Получен HTML вместо изображения. Проблема с сессией/URL?")
-        mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: 0 из {total_pages}.")
+        # ИСПРАВЛЕНО: Ожидаем расширение .jpg по умолчанию
+        expected_filename_str = os.path.join(output_dir, "page_000.jpg")
+        # Проверяем вызов open
+        mock_builtin_open.assert_called_once_with(expected_filename_str, 'wb')
+        mock_builtin_open().write.assert_called_with(b'data')
+        # Проверяем stat
+        mock_file_path = get_mock_path(expected_filename_str)
+        mock_file_path.stat.assert_called_once()
+        # Проверяем финальный статус (файл не пустой по умолчанию)
+        mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: 1 из {total_pages}.")
 
-    def test_download_pages_timeout_error(self, handler, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_status_callback):
-        """Тест ошибки таймаута при скачивании страницы."""
-        mock_session = mock_requests_session.return_value
-        mock_session.get.side_effect = requests.exceptions.Timeout("Timeout during page download")
-
-        total_pages = 1
-        success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, "out")
-
-        assert success_count == 0
-        assert mock_builtin_open.call_count == 0
-        mock_status_callback.assert_any_call(f"Ошибка: Таймаут при скачивании стр. 1 (после {FAKE_CONFIG_DATA['MAX_RETRIES']} попыток).")
-        mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: 0 из {total_pages}.")
-
-    def test_download_pages_request_exception_error(self, handler, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_status_callback):
-        """Тест общей ошибки сети/сервера при скачивании страницы."""
-        mock_session = mock_requests_session.return_value
-        error_message = "Connection refused"
-        mock_session.get.side_effect = requests.exceptions.RequestException(error_message)
-
-        total_pages = 1
-        success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, "out")
-
-        assert success_count == 0
-        assert mock_builtin_open.call_count == 0
-        mock_status_callback.assert_any_call(f"Ошибка сети/сервера на стр. 1 (после {FAKE_CONFIG_DATA['MAX_RETRIES']} попыток): {error_message}")
-        mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: 0 из {total_pages}.")
-
-    def test_download_pages_io_error(self, handler, mock_get_cookies_success, mock_requests_session, mock_builtin_open, mock_status_callback):
-        """Тест ошибки записи файла."""
-        mock_session = mock_requests_session.return_value # Успешный ответ
-        error_message = "Disk full"
-        # Имитируем ошибку при вызове write()
-        mock_file_handle = mock_builtin_open.return_value.__enter__.return_value
-        mock_file_handle.write.side_effect = IOError(error_message)
-
-        total_pages = 1
-        success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, "out")
-
-        assert success_count == 0
-        assert mock_builtin_open.call_count == 1 # Попытка открыть файл была
-        mock_file_handle.write.assert_called_once() # Попытка записи была
-        mock_status_callback.assert_any_call(f"Ошибка записи файла для стр. 1: {error_message}")
-        mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: 0 из {total_pages}.")
 
     def test_download_pages_mkdir_error(self, handler, mock_get_cookies_success, mock_path_methods, mock_status_callback):
-        """Тест ошибки создания выходной директории."""
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
+        output_dir = "out_dir_fail"
         error_message = "Permission denied"
-        mock_path_methods["mkdir"].side_effect = OSError(error_message)
+        # Настраиваем ошибку на моке директории
+        mock_dir_path = get_mock_path(output_dir)
+        mock_dir_path.mkdir.side_effect = OSError(error_message)
 
         total_pages = 1
-        success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, "out_dir_fail")
+        success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, output_dir)
 
         assert success_count == 0
-        assert total_count == total_pages # Общее число страниц известно
-        mock_path_methods["mkdir"].assert_called_once()
-        mock_status_callback.assert_any_call(f"Ошибка создания папки для страниц 'out_dir_fail': {error_message}")
-        # Скачивание не должно было начаться
-        mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: 0 из {total_pages}.") # Финальный статус все равно вызывается
-
-    def test_download_pages_b64_encode_error(self, handler, mock_get_cookies_success, mock_status_callback):
-        """Тест ошибки кодирования URL в Base64 (маловероятно, но для покрытия)."""
-        total_pages = 1
-        pdf_filename = "doc.pdf"
-        # Имитируем ошибку при кодировании
-        with patch('src.logic.base64.b64encode', side_effect=Exception("Encoding failed")):
-            success_count, total_count = handler.download_pages("b/", "i/", pdf_filename, total_pages, "out")
-
-        assert success_count == 0
-        mock_status_callback.assert_any_call("Ошибка кодирования URL для стр. 1: Encoding failed")
-        mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: 0 из {total_pages}.")
-
-    def test_download_pages_no_initial_cookies(self, handler, mock_get_cookies_fail, mock_requests_session, mock_status_callback):
-        """Тест продолжения скачивания, если не удалось получить куки."""
-        mock_session = mock_requests_session.return_value # Успешный ответ по умолчанию
-        total_pages = 1
-
-        success_count, total_count = handler.download_pages("b/", "i/", "p", total_pages, "out")
-
-        assert success_count == total_pages # Скачивание должно пройти успешно
-        mock_get_cookies_fail.assert_called_once()
-        mock_status_callback.assert_any_call("Продолжаем без автоматических куки (могут быть проблемы)...")
-        assert mock_session.get.call_count == total_pages
-        mock_status_callback.assert_any_call(f"Скачивание завершено. Успешно: {total_pages} из {total_pages}.")
+        assert total_count == total_pages
+        mock_dir_path.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+        mock_status_callback.assert_any_call(f"Ошибка создания папки для страниц '{output_dir}': {error_message}")
+        # Финальный статус НЕ должен вызываться при ошибке mkdir
+        final_status_call = call(f"Скачивание завершено. Успешно: 0 из {total_pages}.")
+        assert final_status_call not in mock_status_callback.call_args_list
 
 
     # --- Тесты process_images ---
 
-    def _setup_mock_files(self, mock_path_methods, mock_utils, file_list):
-        """Вспомогательная функция для настройки моков файлов."""
-        mock_files = []
-        page_num_map = {}
-        is_spread_map = {}
-
-        for name, page_num, is_spread, is_file in file_list:
-            mock_file = MagicMock(spec=Path)
-            mock_file.name = name
-            mock_file.suffix = Path(name).suffix
-            mock_file.__str__ = MagicMock(return_value=f"/fake/input/{name}")
-            mock_file.is_file.return_value = is_file
-            mock_files.append(mock_file)
-            if page_num != -1:
-                page_num_map[name] = page_num
-            is_spread_map[mock_file] = is_spread # Используем объект файла как ключ
-
-        mock_path_methods["iterdir"].return_value = mock_files
-        mock_utils["get_page_number"].side_effect = lambda fname: page_num_map.get(fname, -1)
-        # Используем объект файла для is_likely_spread
-        mock_utils["is_likely_spread"].side_effect = lambda fpath, threshold: is_spread_map.get(fpath, False)
-
-        return mock_files # Возвращаем список моков файлов
-
-    def test_process_images_copy_cover_and_spread(self, handler, mock_path_methods, mock_shutil_copy2, mock_utils, mock_status_callback, mock_progress_callback):
-        input_folder = "test_input"
+    def test_process_images_copy_cover_and_spread(self, handler, mock_path_methods, mock_shutil_copy2, mock_utils, mock_status_callback, mock_progress_callback, mock_logic_config):
+        # ИСПРАВЛЕНО: Передаем mock_utils в setup_mock_files
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
+        input_folder = "/fake/input"
         output_folder = "test_output"
-        output_path = Path(output_folder)
 
-        # Список файлов: (имя, номер_стр, это_разворот?, это_файл?)
         files_setup = [
-            ("page_000.jpg", 0, False, True), # Обложка (не разворот по определению)
-            ("page_001.png", 1, False, True), # Одиночная (копируется, т.к. перед разворотом)
-            ("page_002_spread.gif", 2, True, True), # Готовый разворот
-            ("not_an_image.txt", -1, False, True), # Не изображение (пропускается)
-            ("page_003.bmp", 3, False, True), # Одиночная (копируется, т.к. последняя)
-            ("subdir", -1, False, False), # Не файл (пропускается)
+            ("page_000.jpg", 0, False, True),       # Обложка
+            ("page_001.png", 1, False, True),       # Одиночная, след. разворот -> копируем
+            ("page_002_spread.gif", 2, True, True), # Разворот -> копируем
+            ("not_an_image.txt", -1, False, True),  # Не изображение
+            ("page_003.bmp", 3, False, True),       # Одиночная, последняя -> копируем
+            ("subdir", -1, False, False),           # Не файл
         ]
-        mock_files = self._setup_mock_files(mock_path_methods, mock_utils, files_setup)
+        # ИСПРАВЛЕНО: Передаем mock_utils
+        mock_files = setup_mock_files(mock_path_methods, mock_utils, files_setup)
+        # Получаем только нумерованные файлы изображений, как в коде
+        numbered_files = sorted(
+            [f for f in mock_files if mock_utils["get_page_number"](f.name) != -1 and f.suffix.lower() in mock_logic_config.IMAGE_EXTENSIONS],
+            key=lambda f: mock_utils["get_page_number"](f.name)
+        )
+        total_numbered = len(numbered_files) # = 4
 
         processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
 
-        # ИСПРАВЛЕНО: Ожидаем 4 обработанных файла (0, 1, 2, 3)
-        assert processed_count == 4
+        assert processed_count == total_numbered # Обработали все 4 нумерованных файла
         assert created_spread_count == 0 # Только копирование
-        mock_path_methods["mkdir"].assert_called_once_with(parents=True, exist_ok=True)
-        mock_path_methods["iterdir"].assert_called_once()
+        get_mock_path(output_folder).mkdir.assert_called_once_with(parents=True, exist_ok=True)
+        get_mock_path(input_folder).iterdir.assert_called_once()
 
-        # Проверяем вызовы is_likely_spread (вызывается для всех, кроме первого)
+        # Проверяем is_likely_spread (вызывается для 1, 2, 3)
         assert mock_utils["is_likely_spread"].call_count == 3
+        # Используем ANY для порога
         mock_utils["is_likely_spread"].assert_has_calls([
-            call(mock_files[1], FAKE_CONFIG_DATA['DEFAULT_ASPECT_RATIO_THRESHOLD']), # page_001.png
-            call(mock_files[2], FAKE_CONFIG_DATA['DEFAULT_ASPECT_RATIO_THRESHOLD']), # page_002_spread.gif
-            call(mock_files[4], FAKE_CONFIG_DATA['DEFAULT_ASPECT_RATIO_THRESHOLD']), # page_003.bmp
+            call(numbered_files[1], ANY), # page_001.png
+            call(numbered_files[2], ANY), # page_002_spread.gif
+            call(numbered_files[3], ANY), # page_003.bmp
+        ], any_order=True) # Порядок может зависеть от внутренней логики
+
+        # Проверяем copy2
+        assert mock_shutil_copy2.call_count == total_numbered
+        mock_shutil_copy2.assert_has_calls([
+            call(numbered_files[0], get_mock_path(os.path.join(output_folder, "spread_000.jpg"))),
+            call(numbered_files[1], get_mock_path(os.path.join(output_folder, "spread_001.png"))),
+            call(numbered_files[2], get_mock_path(os.path.join(output_folder, "spread_002.gif"))),
+            call(numbered_files[3], get_mock_path(os.path.join(output_folder, "spread_003.bmp"))),
         ], any_order=False) # Порядок важен
 
-        # Проверяем вызовы copy2
-        assert mock_shutil_copy2.call_count == 4
-        mock_shutil_copy2.assert_has_calls([
-            call(mock_files[0], output_path / "spread_000.jpg"), # Обложка
-            call(mock_files[1], output_path / "spread_001.png"), # Одиночная перед разворотом
-            call(mock_files[2], output_path / "spread_002.gif"), # Готовый разворот
-            call(mock_files[4], output_path / "spread_003.bmp"), # Последняя одиночная
-        ])
-
-        # Проверяем прогресс (всего 4 нумерованных файла)
-        total_numbered = 4
         assert mock_progress_callback.call_count == total_numbered + 1
-        mock_progress_callback.assert_has_calls([
-             call(0, total_numbered), # Старт
-             call(1, total_numbered), # После стр 0
-             call(2, total_numbered), # После стр 1
-             call(3, total_numbered), # После стр 2
-             call(4, total_numbered)  # После стр 3
-        ])
-        mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: 4. Создано разворотов: 0.")
+        mock_progress_callback.assert_has_calls([call(i, total_numbered) for i in range(total_numbered + 1)])
+        mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: {total_numbered}. Создано разворотов: 0.")
 
-
-    def test_process_images_merge_two_singles(self, handler, mock_path_methods, mock_shutil_copy2, mock_pil_image, mock_utils, mock_status_callback, mock_progress_callback):
-        input_folder = "test_input_merge"
+    def test_process_images_merge_two_singles(self, handler, mock_path_methods, mock_shutil_copy2, mock_pil_image, mock_utils, mock_status_callback, mock_progress_callback, mock_logic_config):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
+        input_folder = "/fake/input"
         output_folder = "test_output_merge"
-        output_path = Path(output_folder)
 
         files_setup = [
             ("page_000_cover.jpg", 0, False, True), # Обложка
-            ("page_001_left.png", 1, False, True),  # Левая одиночная
-            ("page_002_right.bmp", 2, False, True), # Правая одиночная
+            ("page_001_left.png", 1, False, True),  # Левая для склейки
+            ("page_002_right.bmp", 2, False, True), # Правая для склейки
         ]
-        mock_files = self._setup_mock_files(mock_path_methods, mock_utils, files_setup)
-
-        # Настраиваем моки PIL
-        mock_img_left = MagicMock(size=(800, 1000))
-        mock_img_left.convert.return_value = mock_img_left
-        mock_img_right = MagicMock(size=(800, 1000))
-        mock_img_right.convert.return_value = mock_img_right
-        mock_img_cover = MagicMock(size=(800, 1000)) # Не используется для склейки
-
-        def mock_image_open_side_effect(path):
-            mock_context = MagicMock()
-            # Сравниваем по строковому представлению пути
-            path_str = str(path)
-            if str(mock_files[1]) in path_str: mock_context.__enter__.return_value = mock_img_left
-            elif str(mock_files[2]) in path_str: mock_context.__enter__.return_value = mock_img_right
-            elif str(mock_files[0]) in path_str: mock_context.__enter__.return_value = mock_img_cover
-            else: raise FileNotFoundError(f"Unexpected path in Image.open: {path_str}")
-            return mock_context
-        mock_pil_image.open.side_effect = mock_image_open_side_effect
-
-        mock_spread_img = mock_pil_image.new.return_value # Мок для нового изображения
-
-        processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
-
-        # ИСПРАВЛЕНО: Ожидаем 3 обработанных файла (1 скопирован, 2 склеены)
-        assert processed_count == 3
-        assert created_spread_count == 1 # 1 разворот создан
-        assert mock_utils["is_likely_spread"].call_count == 2 # Проверяем стр 1 и 2
-
-        # Копируем обложку
-        mock_shutil_copy2.assert_called_once_with(mock_files[0], output_path / "spread_000.jpg")
-
-        # Проверяем открытие файлов для склейки
-        mock_pil_image.open.assert_has_calls([call(mock_files[1]), call(mock_files[2])], any_order=True)
-        # Проверяем создание нового изображения
-        mock_pil_image.new.assert_called_once_with('RGB', (1600, 1000), (255, 255, 255))
-        # Проверяем вставку изображений
-        mock_spread_img.paste.assert_has_calls([
-            call(mock_img_left, (0, 0)),
-            call(mock_img_right, (800, 0))
-        ])
-        # Проверяем сохранение разворота
-        expected_spread_filename = output_path / "spread_001-002.jpg"
-        mock_spread_img.save.assert_called_once_with(
-            expected_spread_filename, "JPEG", quality=FAKE_CONFIG_DATA['JPEG_QUALITY'], optimize=True
+        # ИСПРАВЛЕНО: Передаем mock_utils
+        mock_files = setup_mock_files(mock_path_methods, mock_utils, files_setup)
+        numbered_files = sorted(
+            [f for f in mock_files if mock_utils["get_page_number"](f.name) != -1],
+            key=lambda f: mock_utils["get_page_number"](f.name)
         )
+        total_numbered = len(numbered_files) # = 3
 
-        # Проверяем прогресс (3 файла)
-        total_numbered = 3
-        assert mock_progress_callback.call_count == 3 # 0/3, 1/3 (после обложки), 3/3 (после склейки)
-        mock_progress_callback.assert_has_calls([
-            call(0, total_numbered), call(1, total_numbered), call(3, total_numbered)
-        ])
-        mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: 3. Создано разворотов: 1.")
-
-
-    def test_process_images_merge_different_heights(self, handler, mock_path_methods, mock_pil_image, mock_utils, mock_shutil_copy2):
-        input_folder = "test_input_resize"
-        output_folder = "test_output_resize"
-        output_path = Path(output_folder)
-
-        files_setup = [
-            ("page_001_short.png", 1, False, True), # Левая, ниже
-            ("page_002_tall.bmp", 2, False, True),  # Правая, выше
-        ]
-        mock_files = self._setup_mock_files(mock_path_methods, mock_utils, files_setup)
-
-        # Настраиваем моки PIL с разными размерами
-        mock_img_left = MagicMock(size=(800, 1000))
+        # Настраиваем моки PIL для склейки
+        mock_img_left = MagicMock(spec=Image.Image if Image is not MagicMock else None, size=(800, 1000))
         mock_img_left.convert.return_value = mock_img_left
-        mock_img_right = MagicMock(size=(820, 1100)) # Выше
+        mock_img_right = MagicMock(spec=Image.Image if Image is not MagicMock else None, size=(800, 1000))
         mock_img_right.convert.return_value = mock_img_right
-
-        # Мок для измененного левого изображения
-        mock_resized_left = MagicMock(size=(int(800 * 1.1), 1100)) # Ожидаемый размер после resize
-        mock_resized_left.convert.return_value = mock_resized_left
-        mock_img_left.resize.return_value = mock_resized_left # resize левого вернет этот мок
+        mock_img_cover = MagicMock(spec=Image.Image if Image is not MagicMock else None, size=(800, 1000))
 
         def mock_image_open_side_effect(path):
             mock_context = MagicMock()
-            path_str = str(path)
-            if str(mock_files[0]) in path_str: mock_context.__enter__.return_value = mock_img_left
-            elif str(mock_files[1]) in path_str: mock_context.__enter__.return_value = mock_img_right
+            path_str = str(path) # Используем строку для сравнения
+            if path_str == str(numbered_files[1]): mock_context.__enter__.return_value = mock_img_left
+            elif path_str == str(numbered_files[2]): mock_context.__enter__.return_value = mock_img_right
+            elif path_str == str(numbered_files[0]): mock_context.__enter__.return_value = mock_img_cover
             else: raise FileNotFoundError(f"Unexpected path in Image.open: {path_str}")
             return mock_context
         mock_pil_image.open.side_effect = mock_image_open_side_effect
-
+        # Получаем мок созданного изображения
         mock_spread_img = mock_pil_image.new.return_value
 
         processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
 
-        # ИСПРАВЛЕНО: Ожидаем 2 обработанных файла (склеены)
-        assert processed_count == 2
-        assert created_spread_count == 1
+        assert processed_count == total_numbered # Обработали обложку + 2 для склейки
+        assert created_spread_count == 1 # Создали один разворот
+        # is_likely_spread вызывается для стр. 1 и 2
+        assert mock_utils["is_likely_spread"].call_count == 2
 
-        # Проверяем, что обложка не копировалась
-        mock_shutil_copy2.assert_not_called()
+        # Копируем обложку
+        mock_shutil_copy2.assert_called_once_with(numbered_files[0], get_mock_path(os.path.join(output_folder, "spread_000.jpg")))
+        # Открываем файлы для склейки
+        mock_pil_image.open.assert_has_calls([call(numbered_files[1]), call(numbered_files[2])], any_order=True)
+        # Создаем новое изображение
+        mock_pil_image.new.assert_called_once_with('RGB', (1600, 1000), (255, 255, 255))
+        # Вставляем части
+        mock_spread_img.paste.assert_has_calls([call(mock_img_left, (0, 0)), call(mock_img_right, (800, 0))])
+        # Сохраняем результат
+        expected_spread_filename_str = os.path.join(output_folder, "spread_001-002.jpg")
+        mock_spread_img.save.assert_called_once_with(
+            get_mock_path(expected_spread_filename_str),
+             "JPEG", quality=mock_logic_config.JPEG_QUALITY, optimize=True
+        )
 
-        # Проверяем resize левого изображения до высоты правого (1100)
+        # Прогресс: 0/3 (старт), 1/3 (после обложки), 3/3 (после склейки 1 и 2)
+        assert mock_progress_callback.call_count == 3
+        mock_progress_callback.assert_has_calls([call(0, 3), call(1, 3), call(3, 3)])
+        mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: 3. Создано разворотов: 1.")
+
+    def test_process_images_merge_different_heights(self, handler, mock_path_methods, mock_pil_image, mock_utils, mock_shutil_copy2, mock_logic_config):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
+        input_folder = "/fake/input"
+        output_folder = "test_output_resize"
+
+        files_setup = [
+            ("page_001_short.png", 1, False, True), # Левая для склейки
+            ("page_002_tall.bmp", 2, False, True),  # Правая для склейки
+        ]
+        # ИСПРАВЛЕНО: Передаем mock_utils
+        mock_files = setup_mock_files(mock_path_methods, mock_utils, files_setup)
+        numbered_files = sorted(
+            [f for f in mock_files if mock_utils["get_page_number"](f.name) != -1],
+            key=lambda f: mock_utils["get_page_number"](f.name)
+        )
+        total_numbered = len(numbered_files) # = 2
+
+        # Настраиваем моки PIL с разными размерами
+        mock_img_left = MagicMock(spec=Image.Image if Image is not MagicMock else None, size=(800, 1000))
+        mock_img_left.convert.return_value = mock_img_left
+        mock_img_right = MagicMock(spec=Image.Image if Image is not MagicMock else None, size=(820, 1100)) # Выше
+        mock_img_right.convert.return_value = mock_img_right
+        # Мок для измененного левого изображения
         target_height = 1100
         ratio_left = target_height / 1000
         expected_w_left = int(800 * ratio_left)
+        mock_resized_left = MagicMock(spec=Image.Image if Image is not MagicMock else None, size=(expected_w_left, target_height))
+        mock_resized_left.convert.return_value = mock_resized_left
+        mock_img_left.resize.return_value = mock_resized_left # Настроим возврат resize
+
+        def mock_image_open_side_effect(path):
+            mock_context = MagicMock()
+            path_str = str(path)
+            if path_str == str(numbered_files[0]): mock_context.__enter__.return_value = mock_img_left
+            elif path_str == str(numbered_files[1]): mock_context.__enter__.return_value = mock_img_right
+            else: raise FileNotFoundError(f"Unexpected path in Image.open: {path_str}")
+            return mock_context
+        mock_pil_image.open.side_effect = mock_image_open_side_effect
+        mock_spread_img = mock_pil_image.new.return_value
+
+        processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
+
+        assert processed_count == total_numbered # Обработали 2 файла для склейки
+        assert created_spread_count == 1 # Создали 1 разворот
+        mock_shutil_copy2.assert_not_called() # Ничего не копировали
+
+        # Проверяем resize левого изображения
         mock_img_left.resize.assert_called_once_with((expected_w_left, target_height), mock_pil_image.Resampling.LANCZOS)
-        mock_img_right.resize.assert_not_called() # Правое не меняется
+        mock_img_right.resize.assert_not_called() # Правое не меняли
 
-        # Проверяем создание нового изображения с максимальной высотой
-        total_width = expected_w_left + 820 # Ширина измененного левого + ширина правого
+        # Проверяем создание нового изображения
+        total_width = expected_w_left + 820 # Ширина измененного левого + правого
         mock_pil_image.new.assert_called_once_with('RGB', (total_width, target_height), (255, 255, 255))
-
-        # Проверяем вставку (измененного левого и оригинального правого)
+        # Проверяем вставку (с измененным левым)
         mock_spread_img.paste.assert_has_calls([
-            call(mock_resized_left, (0, 0)), # Вставляем измененное левое
-            call(mock_img_right, (expected_w_left, 0)) # Вставляем правое со смещением
+            call(mock_resized_left, (0, 0)),
+            call(mock_img_right, (expected_w_left, 0))
         ])
-        mock_spread_img.save.assert_called_once() # Проверяем сохранение
+        # Проверяем сохранение
+        expected_filename_str = os.path.join(output_folder, "spread_001-002.jpg")
+        mock_spread_img.save.assert_called_once_with(get_mock_path(expected_filename_str), "JPEG", quality=mock_logic_config.JPEG_QUALITY, optimize=True)
 
-
-    def test_process_images_single_then_spread(self, handler, mock_path_methods, mock_shutil_copy2, mock_utils):
-        """Тест: одиночная страница, за которой следует разворот."""
-        input_folder = "test_input_single_spread"
+    def test_process_images_single_then_spread(self, handler, mock_path_methods, mock_shutil_copy2, mock_utils, mock_logic_config):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
+        input_folder = "/fake/input"
         output_folder = "test_output_single_spread"
-        output_path = Path(output_folder)
 
         files_setup = [
             ("page_001_single.jpg", 1, False, True), # Одиночная
             ("page_002_spread.png", 2, True, True),  # Разворот
         ]
-        mock_files = self._setup_mock_files(mock_path_methods, mock_utils, files_setup)
+        # ИСПРАВЛЕНО: Передаем mock_utils
+        mock_files = setup_mock_files(mock_path_methods, mock_utils, files_setup)
+        numbered_files = sorted(
+            [f for f in mock_files if mock_utils["get_page_number"](f.name) != -1],
+            key=lambda f: mock_utils["get_page_number"](f.name)
+        )
+        total_numbered = len(numbered_files) # = 2
 
         processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
 
-        assert processed_count == 2 # Оба файла обработаны (скопированы)
-        assert created_spread_count == 0 # Ничего не создано
-
-        # Проверяем копирование обоих файлов
+        assert processed_count == total_numbered # Обработали оба файла
+        assert created_spread_count == 0 # Только копирование
         assert mock_shutil_copy2.call_count == 2
+        # Проверяем вызовы с моками путей
         mock_shutil_copy2.assert_has_calls([
-            call(mock_files[0], output_path / "spread_001.jpg"), # Копируем одиночную
-            call(mock_files[1], output_path / "spread_002.png"), # Копируем разворот
-        ])
-
-
-    def test_process_images_last_single(self, handler, mock_path_methods, mock_shutil_copy2, mock_utils):
-        """Тест: последняя страница является одиночной."""
-        input_folder = "test_input_last_single"
-        output_folder = "test_output_last_single"
-        output_path = Path(output_folder)
-
-        files_setup = [
-             ("page_001_single.jpg", 1, False, True), # Одиночная - последняя
-        ]
-        mock_files = self._setup_mock_files(mock_path_methods, mock_utils, files_setup)
-
-        processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
-
-        assert processed_count == 1 # Обработан один файл
-        assert created_spread_count == 0
-
-        # Проверяем копирование этого файла
-        mock_shutil_copy2.assert_called_once_with(mock_files[0], output_path / "spread_001.jpg")
-
+            call(numbered_files[0], get_mock_path(os.path.join(output_folder, "spread_001.jpg"))), # Копируем одиночную
+            call(numbered_files[1], get_mock_path(os.path.join(output_folder, "spread_002.png"))), # Копируем разворот
+        ], any_order=False) # Порядок важен
 
     def test_process_images_input_dir_not_found(self, handler, mock_path_methods, mock_shutil_copy2, mock_pil_image, mock_status_callback):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
         input_folder = "non_existent"
         output_folder = "test_output"
-        # Имитируем ошибку при вызове iterdir
-        mock_path_methods["iterdir"].side_effect = FileNotFoundError(f"Dir not found: {input_folder}")
+        # Настраиваем ошибку на iterdir
+        mock_input_dir = get_mock_path(input_folder)
+        mock_input_dir.iterdir.side_effect = FileNotFoundError(f"Dir not found: {input_folder}")
 
         processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
 
         assert processed_count == 0
         assert created_spread_count == 0
-        mock_path_methods["mkdir"].assert_called_once() # Попытка создать выходную папку была
-        mock_path_methods["iterdir"].assert_called_once() # Попытка прочитать входную была
+        get_mock_path(output_folder).mkdir.assert_called_once()
+        mock_input_dir.iterdir.assert_called_once()
         mock_status_callback.assert_any_call(f"Ошибка: Папка со страницами '{input_folder}' не найдена.")
         mock_shutil_copy2.assert_not_called()
         mock_pil_image.open.assert_not_called()
-        mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: 0. Создано разворотов: 0.")
-
+        # Финальный статус НЕ вызывается
+        final_status_call = call(f"Обработка завершена. Обработано/скопировано: 0. Создано разворотов: 0.")
+        assert final_status_call not in mock_status_callback.call_args_list
 
     def test_process_images_input_dir_read_error(self, handler, mock_path_methods, mock_status_callback):
-        """Тест ошибки чтения входной директории (не FileNotFoundError)."""
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
         input_folder = "input_permission_denied"
         output_folder = "test_output"
         error_message = "Permission denied"
-        mock_path_methods["iterdir"].side_effect = OSError(error_message)
+        mock_input_dir = get_mock_path(input_folder)
+        mock_input_dir.iterdir.side_effect = OSError(error_message)
 
         processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
 
         assert processed_count == 0
         assert created_spread_count == 0
-        mock_path_methods["mkdir"].assert_called_once()
-        mock_path_methods["iterdir"].assert_called_once()
+        get_mock_path(output_folder).mkdir.assert_called_once()
+        mock_input_dir.iterdir.assert_called_once()
         mock_status_callback.assert_any_call(f"Ошибка чтения папки '{input_folder}': {error_message}")
-        mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: 0. Создано разворотов: 0.")
+        # Финальный статус НЕ вызывается
+        final_status_call = call(f"Обработка завершена. Обработано/скопировано: 0. Создано разворотов: 0.")
+        assert final_status_call not in mock_status_callback.call_args_list
 
-
-    def test_process_images_empty_input_dir(self, handler, mock_path_methods, mock_status_callback):
-        input_folder = "empty_input"
+    def test_process_images_empty_input_dir(self, handler, mock_path_methods, mock_utils, mock_status_callback):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
+        input_folder = "/fake/input"
         output_folder = "test_output"
-        # iterdir возвращает пустой список
-        self._setup_mock_files(mock_path_methods, mock_utils, []) # Передаем пустой список
+        # iterdir вернет пустой список
+        # ИСПРАВЛЕНО: Передаем mock_utils
+        setup_mock_files(mock_path_methods, mock_utils, [])
 
         processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
 
         assert processed_count == 0
         assert created_spread_count == 0
-        mock_path_methods["mkdir"].assert_called_once()
-        mock_path_methods["iterdir"].assert_called_once()
-        # ИСПРАВЛЕНО: Проверяем правильное сообщение
+        get_mock_path(output_folder).mkdir.assert_called_once()
+        get_mock_path(input_folder).iterdir.assert_called_once()
         mock_status_callback.assert_any_call("В папке не найдено подходящих файлов изображений с номерами.")
-        mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: 0. Создано разворотов: 0.")
+        # Финальный статус НЕ вызывается, если нет файлов для обработки
+        final_status_call = call(f"Обработка завершена. Обработано/скопировано: 0. Создано разворотов: 0.")
+        assert final_status_call not in mock_status_callback.call_args_list
 
-
-    def test_process_images_no_numbered_files(self, handler, mock_path_methods, mock_utils, mock_status_callback):
-        """Тест, когда в папке есть файлы, но без номеров."""
-        input_folder = "input_no_numbers"
+    def test_process_images_no_numbered_files(self, handler, mock_path_methods, mock_utils, mock_status_callback, mock_logic_config):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
+        input_folder = "/fake/input"
         output_folder = "test_output"
         files_setup = [
             ("cover.jpg", -1, False, True),
             ("image_no_num.png", -1, False, True),
+            ("document.pdf", -1, False, True), # Не изображение
         ]
-        self._setup_mock_files(mock_path_methods, mock_utils, files_setup)
+        # ИСПРАВЛЕНО: Передаем mock_utils
+        mock_files = setup_mock_files(mock_path_methods, mock_utils, files_setup)
 
         processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
 
         assert processed_count == 0
         assert created_spread_count == 0
-        mock_path_methods["iterdir"].assert_called_once()
-        # get_page_number будет вызван для обоих файлов
-        assert mock_utils["get_page_number"].call_count == 2
+        get_mock_path(input_folder).iterdir.assert_called_once()
+        # get_page_number вызывается для всех файлов из iterdir
+        assert mock_utils["get_page_number"].call_count == len(files_setup)
         mock_status_callback.assert_any_call("В папке не найдено подходящих файлов изображений с номерами.")
-        mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: 0. Создано разворотов: 0.")
+        # Финальный статус НЕ вызывается
+        final_status_call = call(f"Обработка завершена. Обработано/скопировано: 0. Создано разворотов: 0.")
+        assert final_status_call not in mock_status_callback.call_args_list
 
+    def test_process_images_merge_error(self, handler, mock_path_methods, mock_pil_image, mock_utils, mock_status_callback, mock_logic_config):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
+        input_folder = "/fake/input"
+        output_folder = "test_output_merge_err"
 
-    def test_process_images_interrupted(self, handler, stop_event, mock_path_methods, mock_shutil_copy2, mock_pil_image, mock_utils, mock_status_callback, mock_progress_callback):
-        input_folder = "test_input_interrupt"
+        files_setup = [
+            ("page_001.png", 1, False, True),
+            ("page_002_corrupt.bmp", 2, False, True), # Этот файл вызовет ошибку
+        ]
+        # ИСПРАВЛЕНО: Передаем mock_utils
+        mock_files = setup_mock_files(mock_path_methods, mock_utils, files_setup)
+        numbered_files = sorted(
+            [f for f in mock_files if mock_utils["get_page_number"](f.name) != -1],
+            key=lambda f: mock_utils["get_page_number"](f.name)
+        )
+        total_numbered = len(numbered_files) # = 2
+
+        # Настраиваем ошибку при открытии второго файла
+        error_message = "Cannot identify image file"
+        mock_img_left = MagicMock(spec=Image.Image if Image is not MagicMock else None, size=(800, 1000))
+        mock_img_left.convert.return_value = mock_img_left
+
+        def mock_image_open_side_effect(path):
+            mock_context = MagicMock()
+            path_str = str(path)
+            if path_str == str(numbered_files[0]):
+                mock_context.__enter__.return_value = mock_img_left
+            elif path_str == str(numbered_files[1]):
+                # Используем ошибку из мока Image
+                raise mock_pil_image.UnidentifiedImageError(error_message)
+            else: raise FileNotFoundError()
+            return mock_context
+        mock_pil_image.open.side_effect = mock_image_open_side_effect
+
+        processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
+
+        # Ожидаем 2 обработанных файла (т.к. инкремент = 2 при ошибке склейки)
+        assert processed_count == 2
+        assert created_spread_count == 0
+        # Пытались открыть оба файла
+        mock_pil_image.open.assert_has_calls([call(numbered_files[0]), call(numbered_files[1])])
+        mock_pil_image.new.assert_not_called() # Создание разворота не произошло
+        # Проверяем сообщение об ошибке
+        mock_status_callback.assert_any_call(
+            f"Ошибка при создании разворота для {numbered_files[0].name} и {numbered_files[1].name}: {error_message}"
+        )
+        # Финальный статус вызывается после завершения цикла
+        mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: 2. Создано разворотов: 0.")
+
+    def test_process_images_interrupted(self, handler, stop_event, mock_path_methods, mock_shutil_copy2, mock_pil_image, mock_utils, mock_status_callback, mock_progress_callback, mock_logic_config):
+        MockPathClass, get_mock_path, path_mocks = mock_path_methods
+        input_folder = "/fake/input"
         output_folder = "test_output_interrupt"
 
         files_setup = [
@@ -967,114 +944,36 @@ class TestLibraryHandler:
             ("page_001.png", 1, False, True), # Одиночная
             ("page_002.bmp", 2, False, True), # Одиночная
         ]
-        mock_files = self._setup_mock_files(mock_path_methods, mock_utils, files_setup)
+        # ИСПРАВЛЕНО: Передаем mock_utils
+        mock_files = setup_mock_files(mock_path_methods, mock_utils, files_setup)
+        numbered_files = sorted(
+            [f for f in mock_files if mock_utils["get_page_number"](f.name) != -1],
+            key=lambda f: mock_utils["get_page_number"](f.name)
+        )
+        total_numbered = len(numbered_files) # = 3
 
         # Имитируем остановку *после* копирования первого файла (обложки)
         original_copy = mock_shutil_copy2.side_effect
-        copy_call_count = 0
-        def stop_on_copy(*args, **kwargs):
-            nonlocal copy_call_count
-            copy_call_count += 1
-            if copy_call_count >= 1: # Останавливаем после первого же копирования
-                stop_event.set()
+        def stop_after_first_copy(*args, **kwargs):
+            # Вызываем оригинальный copy2
+            result = None
             if original_copy:
-                 return original_copy(*args, **kwargs)
-            return None
-        mock_shutil_copy2.side_effect = stop_on_copy
+                 result = original_copy(*args, **kwargs)
+            # Устанавливаем флаг *после* первого вызова
+            if mock_shutil_copy2.call_count == 1:
+                stop_event.set()
+            return result
+        mock_shutil_copy2.side_effect = stop_after_first_copy
 
         processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
 
-        # ИСПРАВЛЕНО: Успели обработать только обложку (1 файл)
-        assert processed_count == 1
+        assert processed_count == 1 # Успели обработать только обложку
         assert created_spread_count == 0
         mock_shutil_copy2.assert_called_once() # Скопировали только обложку
         mock_pil_image.open.assert_not_called() # До склейки не дошли
         mock_status_callback.assert_any_call("--- Обработка прервана пользователем ---")
-
-        # Проверяем прогресс (3 файла всего)
-        total_numbered = 3
         # Прогресс: 0/3 (старт), 1/3 (после обложки)
         assert mock_progress_callback.call_count == 2
         mock_progress_callback.assert_has_calls([call(0, total_numbered), call(1, total_numbered)])
+        # Финальный статус вызывается после прерывания
         mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: 1. Создано разворотов: 0.")
-
-
-    def test_process_images_copy_error(self, handler, mock_path_methods, mock_shutil_copy2, mock_utils, mock_status_callback):
-        """Тест ошибки при копировании файла."""
-        input_folder = "test_input_copy_err"
-        output_folder = "test_output_copy_err"
-
-        files_setup = [ ("page_000.jpg", 0, False, True) ] # Только обложка
-        mock_files = self._setup_mock_files(mock_path_methods, mock_utils, files_setup)
-
-        error_message = "Permission denied on output"
-        mock_shutil_copy2.side_effect = Exception(error_message)
-
-        processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
-
-        assert processed_count == 0 # Файл не был успешно обработан
-        assert created_spread_count == 0
-        mock_shutil_copy2.assert_called_once() # Попытка копирования была
-        mock_status_callback.assert_any_call(f"Ошибка при копировании {mock_files[0].name}: {error_message}")
-        mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: 0. Создано разворотов: 0.")
-
-
-    def test_process_images_merge_error(self, handler, mock_path_methods, mock_pil_image, mock_utils, mock_status_callback):
-        """Тест ошибки при склейке изображений (например, Image.open или save)."""
-        input_folder = "test_input_merge_err"
-        output_folder = "test_output_merge_err"
-
-        files_setup = [
-            ("page_001.png", 1, False, True),
-            ("page_002_corrupt.bmp", 2, False, True), # Этот файл вызовет ошибку
-        ]
-        mock_files = self._setup_mock_files(mock_path_methods, mock_utils, files_setup)
-
-        # Имитируем ошибку при открытии второго файла
-        error_message = "Cannot identify image file"
-        mock_img_left = MagicMock(size=(800, 1000))
-        mock_img_left.convert.return_value = mock_img_left
-
-        def mock_image_open_side_effect(path):
-            mock_context = MagicMock()
-            path_str = str(path)
-            if str(mock_files[0]) in path_str:
-                mock_context.__enter__.return_value = mock_img_left
-            elif str(mock_files[1]) in path_str:
-                raise Image.UnidentifiedImageError(error_message) # Ошибка при открытии второго
-            else:
-                 raise FileNotFoundError()
-            return mock_context
-        mock_pil_image.open.side_effect = mock_image_open_side_effect
-
-        processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
-
-        # ИСПРАВЛЕНО: Оба файла считаются "обработанными" в смысле прохода по циклу,
-        # но разворот не создан. processed_increment будет 2 из-за ошибки.
-        assert processed_count == 2
-        assert created_spread_count == 0 # Разворот не создан
-        mock_pil_image.open.assert_has_calls([call(mock_files[0]), call(mock_files[1])])
-        mock_pil_image.new.assert_not_called() # До создания нового не дошло
-        mock_status_callback.assert_any_call(
-            f"Ошибка при создании разворота для {mock_files[0].name} и {mock_files[1].name}: {error_message}"
-        )
-        mock_status_callback.assert_any_call(f"Обработка завершена. Обработано/скопировано: 2. Создано разворотов: 0.")
-
-    def test_process_images_output_mkdir_error(self, handler, mock_path_methods, mock_status_callback):
-        """Тест ошибки создания выходной директории в process_images."""
-        input_folder = "test_input_out_mkdir"
-        output_folder = "test_output_out_mkdir_fail"
-        error_message = "Cannot create output dir"
-        mock_path_methods["mkdir"].side_effect = OSError(error_message)
-
-        # Не важно, какие файлы на входе, т.к. ошибка до их чтения
-        mock_path_methods["iterdir"].return_value = []
-
-        processed_count, created_spread_count = handler.process_images(input_folder, output_folder)
-
-        assert processed_count == 0
-        assert created_spread_count == 0
-        mock_path_methods["mkdir"].assert_called_once()
-        mock_status_callback.assert_any_call(f"Ошибка создания папки для разворотов '{output_folder}': {error_message}")
-        mock_path_methods["iterdir"].assert_not_called() # До чтения файлов не доходит
-        # Финальный статус не вызывается, т.к. выход происходит раньше

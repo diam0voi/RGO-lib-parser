@@ -74,12 +74,17 @@ class LibraryHandler:
         Returns:
             True, если куки успешно получены, иначе False.
         """
-        if not self.session:
-            self._setup_session_with_retry()
+        try: # Обертка для перехвата ошибки создания сессии
             if not self.session:
-                 logger.error("Failed to setup session in _get_initial_cookies")
-                 self.status_callback("Критическая ошибка: Не удалось создать сетевую сессию.")
-                 return False
+                self._setup_session_with_retry()
+                if not self.session:
+                    logger.error("Failed to setup session in _get_initial_cookies")
+                    self.status_callback("Критическая ошибка: Не удалось создать сетевую сессию.")
+                    return False
+        except Exception as setup_exc:
+            logger.error(f"Failed to setup session during cookie retrieval: {setup_exc}", exc_info=True)
+            self.status_callback(f"Критическая ошибка при настройке сессии: {setup_exc}")
+            return False
 
 
         self.status_callback(f"Автоматическое получение сессионных куки с {config.INITIAL_COOKIE_URL}...")

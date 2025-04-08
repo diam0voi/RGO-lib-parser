@@ -1,15 +1,18 @@
 # tests/test_utils.py
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 from pathlib import Path
 import logging
+import logging.handlers # Импортируем handlers для доступа к классу
 import sys
 import importlib
-import stat # <-- Импорт был здесь, все ок
-import os # <-- Добавлен импорт os для os.PathLike
+import stat
+import os
 
 # Импортируем тестируемый модуль и зависимости
 from src import utils
+from src import config as src_config # Импортируем config
+
 try:
     from PIL import Image
 except ImportError:
@@ -19,29 +22,30 @@ except ImportError:
 
 @pytest.fixture(autouse=True)
 def disable_logging():
-    logging.disable(logging.CRITICAL)
+    logging.disable(logging.CRITICAL + 10)
     yield
     logging.disable(logging.NOTSET)
 
 @pytest.fixture
 def mock_pil_image_open():
     with patch('src.utils.Image.open') as mock_open:
-        mock_img = MagicMock()
+        mock_img = MagicMock(spec=Image.Image if Image is not MagicMock else None)
+        mock_img.size = (100, 100)
         mock_context = MagicMock()
         mock_context.__enter__.return_value = mock_img
+        mock_context.__exit__ = MagicMock(return_value=None)
         mock_open.return_value = mock_context
         yield mock_open, mock_img
 
 @pytest.fixture
 def mock_utils_config():
-    # ДОБАВЛЕНО: Мокаем атрибуты, используемые в setup_logging
     with patch('src.utils.config') as mock_config:
         mock_config.DEFAULT_ASPECT_RATIO_THRESHOLD = 1.1
         mock_config.LOG_FILE = "test_app.log"
-        mock_config.LOG_MAX_BYTES = 1024
-        mock_config.LOG_BACKUP_COUNT = 1
+        mock_config.LOG_MAX_BYTES = 1024 * 5
+        mock_config.LOG_BACKUP_COUNT = 3
         mock_config.LOG_LEVEL = logging.DEBUG
-        mock_config.APP_NAME = "TestApp"
+        mock_config.APP_NAME = "TestAppUtils"
         yield mock_config
 
 @pytest.fixture
@@ -49,77 +53,98 @@ def mock_utils_logger():
     with patch('src.utils.logger') as mock_logger:
         yield mock_logger
 
-# ДОБАВЛЕНО: Фикстура для мока Path в setup_logging
 @pytest.fixture
 def mock_path_in_utils():
-    with patch('src.utils.Path') as MockPath:
-        # Мок для Path(log_file).parent
-        mock_log_dir = MagicMock(spec=Path)
-        mock_log_dir.is_dir.return_value = True # По умолчанию директория существует
+    # Упрощенный мок Path, фокусируемся на том, что нужно тестам
+    path_mocks = {}
 
-        # Мок для Path(log_file)
-        mock_log_file_path = MagicMock(spec=Path)
-        mock_log_file_path.parent = mock_log_dir
+    def get_mock_path(path_arg):
+        path_str = str(path_arg)
+        # Нормализуем путь для ключа словаря (важно для Windows)
+        norm_path_str = os.path.normpath(path_str)
+        if norm_path_str not in path_mocks:
+            mock = MagicMock(spec=Path)
+            mock.name = Path(path_str).name
+            mock.suffix = Path(path_str).suffix
+            mock.__str__ = MagicMock(return_value=path_str)
+            mock.__fspath__ = MagicMock(return_value=path_str)
+            mock.is_dir = MagicMock(return_value=False, name=f"is_dir_{norm_path_str}")
+            mock.mkdir = MagicMock(name=f"mkdir_{norm_path_str}")
+            mock.resolve = MagicMock(return_value=mock, name=f"resolve_{norm_path_str}")
 
-        # Мок для Path(__file__)
-        mock_file_path = MagicMock(spec=Path)
-        mock_file_path.resolve.return_value = mock_file_path
-        mock_file_path.parent = MagicMock(spec=Path) # src_dir
-        mock_file_path.parent.parent = MagicMock(spec=Path) # base_path
-
-        def path_side_effect(arg):
-            if arg == mock_utils_config.LOG_FILE:
-                return mock_log_file_path
-            elif arg == utils.__file__: # Сравниваем с реальным путем или моком __file__
-                 return mock_file_path
+            # Настройка parent
+            real_parent = Path(path_str).parent
+            if real_parent != Path(path_str):
+                mock.parent = get_mock_path(str(real_parent))
             else:
-                # Возвращаем стандартный Path для других случаев (например, в resource_path)
-                # или специфичный мок, если нужно
-                return Path(arg) # Используем настоящий Path для остальных
+                mock.parent = mock # Корень
 
-        MockPath.side_effect = path_side_effect
-        # Также мокаем статические методы, если они используются напрямую
-        MockPath.is_dir = Path.is_dir
-        MockPath.mkdir = MagicMock()
+            # Настройка truediv (/)
+            mock.__truediv__ = lambda self, other: get_mock_path(os.path.join(str(self), str(other)))
 
-        # Возвращаем основной мок класса Path и специфичные моки для директорий/файлов
-        yield MockPath, mock_log_dir, mock_log_file_path
+            path_mocks[norm_path_str] = mock
+        return path_mocks[norm_path_str]
 
+    # Патчим Path в модуле utils
+    with patch('src.utils.Path', side_effect=get_mock_path) as MockPathClass:
+        yield MockPathClass, get_mock_path, path_mocks
 
-# ДОБАВЛЕНО: Фикстура для мока logging.handlers
 @pytest.fixture
 def mock_logging_handlers():
-    with patch('src.utils.logging.handlers') as mock_handlers:
-        mock_handlers.RotatingFileHandler = MagicMock()
-        yield mock_handlers
+    # ИСПРАВЛЕНО: Патчим конкретный класс RotatingFileHandler, а не весь модуль
+    # Указываем полный путь к классу
+    with patch('logging.handlers.RotatingFileHandler', spec=logging.handlers.RotatingFileHandler) as MockRotatingFileHandlerClass:
+        mock_handler_instance = MagicMock(spec=logging.handlers.RotatingFileHandler)
+        mock_handler_instance.setFormatter = MagicMock(name="setFormatterMock")
+        mock_handler_instance.setLevel = MagicMock(name="setLevelMock")
+        MockRotatingFileHandlerClass.return_value = mock_handler_instance
+        yield MockRotatingFileHandlerClass # Возвращаем мок класса
 
-# ДОБАВЛЕНО: Фикстура для мока logging базовых функций
 @pytest.fixture
-def mock_logging_basic():
-     # Используем MagicMock для getLogger, чтобы он возвращал мок-логгер
-    mock_logger_instance = MagicMock(spec=logging.Logger)
-    # Настраиваем setLevel и addHandler, так как они вызываются
-    mock_logger_instance.setLevel = MagicMock()
-    mock_logger_instance.addHandler = MagicMock()
+def mock_logging_basic(mock_utils_config):
+    mock_root_logger = MagicMock(spec=logging.Logger, name="RootLoggerMock")
+    mock_root_logger.setLevel = MagicMock()
+    mock_root_logger.addHandler = MagicMock()
+    mock_root_logger.info = MagicMock()
+    # ИСПРАВЛЕНО: Имитируем handlers как список, чтобы избежать ошибок при добавлении
+    mock_root_logger.handlers = []
 
-    with patch('src.utils.logging.getLogger', return_value=mock_logger_instance) as mock_getLogger, \
-         patch('src.utils.logging.Formatter') as mock_Formatter, \
-         patch('src.utils.logging.info') as mock_info, \
-         patch('src.utils.logging.basicConfig') as mock_basicConfig, \
-         patch('src.utils.print') as mock_print: # Мокаем print для отлова фатальных ошибок
-        # Возвращаем словарь моков для удобства доступа в тестах
+    mock_utils_logger_instance = MagicMock(spec=logging.Logger, name="UtilsLoggerMock")
+
+    getLogger_calls = [] # Сохраняем вызовы для проверки
+    def getLogger_side_effect(name=None):
+        getLogger_calls.append(name) # Логируем вызов
+        if name == utils.__name__:
+            return mock_utils_logger_instance
+        elif name is None or name == logging.root.name:
+            return mock_root_logger
+        else:
+            return MagicMock(spec=logging.Logger, name=f"OtherLogger_{name}")
+
+    # Патчим getLogger, Formatter и print
+    with patch('logging.getLogger', side_effect=getLogger_side_effect) as mock_getLogger, \
+         patch('logging.Formatter', spec=logging.Formatter) as mock_Formatter, \
+         patch('builtins.print') as mock_print:
+
+        # Сбрасываем моки перед тестом
+        mock_root_logger.reset_mock()
+        mock_root_logger.handlers = [] # Сбрасываем handlers
+        mock_Formatter.reset_mock()
+        mock_getLogger.reset_mock()
+        mock_print.reset_mock()
+        getLogger_calls.clear() # Очищаем лог вызовов
+
         yield {
             "getLogger": mock_getLogger,
             "Formatter": mock_Formatter,
-            "info": mock_info,
-            "basicConfig": mock_basicConfig,
             "print": mock_print,
-            "logger_instance": mock_logger_instance # Возвращаем инстанс логгера
+            "root_logger": mock_root_logger,
+            "utils_logger": mock_utils_logger_instance,
+            "getLogger_calls": getLogger_calls # Возвращаем лог вызовов
         }
 
-
 # --- Тесты для get_page_number ---
-
+# ... (без изменений) ...
 @pytest.mark.parametrize("filename, expected", [
     ("page_001.jpg", 1),
     ("spread_123-456.png", 123),
@@ -136,7 +161,7 @@ def test_get_page_number(filename, expected):
     assert utils.get_page_number(filename) == expected
 
 # --- Тесты для is_likely_spread ---
-
+# ... (без изменений) ...
 def test_is_likely_spread_true(mock_pil_image_open, mock_utils_config):
     mock_open, mock_img = mock_pil_image_open
     mock_utils_config.DEFAULT_ASPECT_RATIO_THRESHOLD = 1.1
@@ -147,186 +172,210 @@ def test_is_likely_spread_true(mock_pil_image_open, mock_utils_config):
 def test_is_likely_spread_false_ratio(mock_pil_image_open, mock_utils_config):
     mock_open, mock_img = mock_pil_image_open
     mock_utils_config.DEFAULT_ASPECT_RATIO_THRESHOLD = 1.1
-    mock_img.size = (1000, 1000) # Ratio 1.0 < 1.1
+    mock_img.size = (1000, 1000) # Ratio 1.0 <= 1.1
     assert utils.is_likely_spread("dummy_path.jpg") is False
 
 def test_is_likely_spread_false_zero_height(mock_pil_image_open, mock_utils_config, mock_utils_logger):
-    # ДОБАВЛЕНО: mock_utils_logger для проверки warning
     mock_open, mock_img = mock_pil_image_open
     mock_utils_config.DEFAULT_ASPECT_RATIO_THRESHOLD = 1.1
     mock_img.size = (1000, 0)
     assert utils.is_likely_spread("dummy_path.jpg") is False
-    # ДОБАВЛЕНО: Проверка вызова warning
     mock_utils_logger.warning.assert_called_with("Image has zero height: dummy_path.jpg")
 
-def test_is_likely_spread_exception(mock_pil_image_open, mock_utils_logger, mock_utils_config):
+def test_is_likely_spread_exception_pil(mock_pil_image_open, mock_utils_logger, mock_utils_config):
     mock_open, _ = mock_pil_image_open
-    mock_open.side_effect = Exception("PIL Error")
+    error_message = "PIL Error"
+    mock_open.side_effect = Exception(error_message)
     assert utils.is_likely_spread("dummy_path.jpg") is False
     mock_utils_logger.warning.assert_called_once_with(
-        "Could not check aspect ratio for dummy_path.jpg: PIL Error", exc_info=True
+        f"Could not check aspect ratio for dummy_path.jpg: {error_message}",
+        exc_info=True
     )
 
 def test_is_likely_spread_file_not_found(mock_pil_image_open, mock_utils_logger, mock_utils_config):
     mock_open, _ = mock_pil_image_open
-    mock_open.side_effect = FileNotFoundError("File not found")
+    error_message = "File not found"
+    mock_open.side_effect = FileNotFoundError(error_message)
     assert utils.is_likely_spread("non_existent.jpg") is False
     mock_utils_logger.error.assert_called_once_with("Image file not found for aspect ratio check: non_existent.jpg")
 
+
 # --- Тесты для resource_path ---
+@patch('sys.frozen', True, create=True)
+@patch('sys._MEIPASS', '/path/to/_MEIPASS', create=True)
+def test_resource_path_pyinstaller(mock_path_in_utils):
+    MockPathClass, get_mock_path, path_mocks = mock_path_in_utils
+    relative = os.path.join("assets", "icon.png")
+    expected_path_str = os.path.join(sys._MEIPASS, relative)
 
-# ИСПРАВЛЕНО: Убираем create=True, т.к. _MEIPASS может не существовать
-@patch('sys.frozen', True, create=True) # Имитируем запуск из PyInstaller
-@patch('sys._MEIPASS', new_callable=MagicMock)
-def test_resource_path_pyinstaller(mock_meipass):
-    meipass_path_str = '/path/to/_MEIPASS'
-    # ИСПРАВЛЕНО: Настраиваем мок как Path-совместимый объект
-    mock_meipass.__str__.return_value = meipass_path_str
-    mock_meipass.__fspath__.return_value = meipass_path_str # Для Path()
+    result = utils.resource_path(relative)
 
-    # Перезагрузка utils не нужна, т.к. sys._MEIPASS проверяется внутри функции
+    assert os.path.normpath(result) == os.path.normpath(expected_path_str)
+    # ИСПРАВЛЕНО: Проверяем вызов Path с _MEIPASS
+    MockPathClass.assert_any_call(sys._MEIPASS)
+    # ИСПРАВЛЕНО: Проверяем вызов __truediv__ на моке пути _MEIPASS
+    mock_meipass_path = get_mock_path(sys._MEIPASS)
+    mock_meipass_path.__truediv__.assert_called_with(relative)
 
-    expected = str(Path(meipass_path_str) / "assets" / "icon.png")
-    # ИСПРАВЛЕНО: Используем os.path.join для большей надежности с путями
-    assert utils.resource_path("assets/icon.png") == os.path.join(meipass_path_str, "assets", "icon.png")
 
-# ИСПРАВЛЕНО: Патчим sys.frozen=False и удаляем патч sys._MEIPASS
 @patch('sys.frozen', False, create=True)
-@patch('src.utils.__file__') # Патчим __file__ модуля utils
-def test_resource_path_script(mock_file_attr):
-    """Тест resource_path при запуске как обычный скрипт."""
-    # ИСПРАВЛЕНО: Определяем пути более надежно
-    # Имитируем, что utils.py находится в /project/src/utils.py
-    utils_file_abs_path = Path('/fake/project/src/utils.py').resolve()
-    project_root = utils_file_abs_path.parent.parent # /fake/project
+@patch('sys._MEIPASS', None, create=True)
+# ИСПРАВЛЕНО: Патчим __file__ более надежно
+@patch('src.utils.__file__', os.path.normpath('/fake/project/src/utils.py'))
+def test_resource_path_script(mock_path_in_utils):
+    MockPathClass, get_mock_path, path_mocks = mock_path_in_utils
+    relative = os.path.join("assets", "icon.png")
+    # Ожидаемый путь: корень проекта + relative
+    # Корень проекта вычисляется как Path(__file__).parent.parent
+    expected_project_root = os.path.normpath('/fake/project')
+    expected_path_str = os.path.join(expected_project_root, relative)
 
-    # Настраиваем мок __file__ так, чтобы он вел себя как строка или Path-like
-    mock_file_attr.__str__.return_value = str(utils_file_abs_path)
-    mock_file_attr.__fspath__.return_value = str(utils_file_abs_path) # Для Path()
+    # ИСПРАВЛЕНО: Настраиваем мок Path, чтобы он правильно вычислял parent.parent
+    # Фикстура mock_path_in_utils уже должна это делать через рекурсивный вызов get_mock_path
+    # Убедимся, что мок __file__ правильно обрабатывается
+    mock_file_path = get_mock_path(utils.__file__)
+    mock_src_dir = get_mock_path(os.path.dirname(utils.__file__))
+    mock_base_path = get_mock_path(os.path.dirname(os.path.dirname(utils.__file__)))
 
-    # --- ИСПРАВЛЕНО: Мокаем Path(__file__).resolve().parent.parent ---
-    # Вместо моканья cwd, мокаем результат цепочки вызовов в самой функции
-    with patch('src.utils.Path') as MockPath:
-        mock_resolved_path = MagicMock(spec=Path)
-        mock_src_dir = MagicMock(spec=Path)
-        mock_base_path = MagicMock(spec=Path) # Это будет наш project_root
+    # Явно связываем моки родителей (на всякий случай)
+    mock_file_path.parent = mock_src_dir
+    mock_src_dir.parent = mock_base_path
 
-        mock_resolved_path.parent = mock_src_dir
-        mock_src_dir.parent = mock_base_path
+    result = utils.resource_path(relative)
 
-        # Когда Path() вызывается с моком __file__, возвращаем настроенный mock_resolved_path
-        MockPath.return_value.resolve.return_value = mock_resolved_path
-
-        # Когда Path() вызывается с base_path для финального пути,
-        # он должен вернуть объект, который может быть объединен с relative_path
-        # Мокаем `base_path / relative_path`
-        mock_base_path.__truediv__ = lambda self, rel_path: project_root / rel_path # Используем реальный Path для конкатенации
-
-        expected = str(project_root / "assets" / "icon.png")
-        result = utils.resource_path("assets/icon.png")
-        assert result == expected
-        # Проверяем, что Path(__file__).resolve() было вызвано
-        MockPath.assert_any_call(mock_file_attr)
-        MockPath.return_value.resolve.assert_called_once()
+    assert os.path.normpath(result) == os.path.normpath(expected_path_str)
+    # Проверяем вызовы Path
+    MockPathClass.assert_any_call(utils.__file__)
+    # Проверяем вызов resolve на моке __file__
+    mock_file_path.resolve.assert_called_once()
+    # Проверяем вызов __truediv__ на моке базового пути
+    mock_base_path.__truediv__.assert_called_with(relative)
 
 
-# --- ДОБАВЛЕНЫ тесты для setup_logging ---
+# --- Тесты для setup_logging ---
 
 def test_setup_logging_success(mock_utils_config, mock_path_in_utils, mock_logging_handlers, mock_logging_basic):
-    """Тест успешной настройки логирования."""
-    MockPath, mock_log_dir, _ = mock_path_in_utils
-    mock_log_dir.is_dir.return_value = True # Директория существует
+    MockPath, get_mock_path, path_mocks = mock_path_in_utils
+    # ИСПРАВЛЕНО: Получаем мок класса из фикстуры
+    MockRotatingFileHandlerClass = mock_logging_handlers
+    mock_log_basics = mock_logging_basic
+
+    mock_log_dir = get_mock_path(Path(mock_utils_config.LOG_FILE).parent)
+    mock_log_dir.is_dir.return_value = True
+
+    # Сброс перед вызовом
+    mock_log_basics["root_logger"].reset_mock()
+    mock_log_basics["root_logger"].handlers = [] # Важно сбросить список
+    MockRotatingFileHandlerClass.reset_mock()
+    mock_log_basics["Formatter"].reset_mock()
+    mock_log_basics["getLogger"].reset_mock()
+    mock_log_basics["getLogger_calls"].clear()
 
     utils.setup_logging()
 
-    # Проверяем создание директории (не должно быть вызвано)
     mock_log_dir.mkdir.assert_not_called()
-
-    # Проверяем создание форматера
-    mock_logging_basic["Formatter"].assert_called_once_with('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    # Проверяем создание хендлера
-    mock_logging_handlers.RotatingFileHandler.assert_called_once_with(
+    mock_log_basics["Formatter"].assert_called_once_with('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter_instance = mock_log_basics["Formatter"].return_value
+    MockRotatingFileHandlerClass.assert_called_once_with(
         mock_utils_config.LOG_FILE,
         maxBytes=mock_utils_config.LOG_MAX_BYTES,
         backupCount=mock_utils_config.LOG_BACKUP_COUNT,
         encoding='utf-8'
     )
-    mock_handler_instance = mock_logging_handlers.RotatingFileHandler.return_value
-    mock_handler_instance.setFormatter.assert_called_once()
+    mock_handler_instance = MockRotatingFileHandlerClass.return_value
+    mock_handler_instance.setFormatter.assert_called_once_with(formatter_instance)
     mock_handler_instance.setLevel.assert_called_once_with(mock_utils_config.LOG_LEVEL)
 
-    # Проверяем настройку корневого логгера
-    mock_logging_basic["getLogger"].assert_called_with() # Без аргумента - корневой
-    root_logger_instance = mock_logging_basic["logger_instance"]
+    # ИСПРАВЛЕНО: Проверяем, что getLogger вызывался для root
+    assert None in mock_log_basics["getLogger_calls"] or logging.root.name in mock_log_basics["getLogger_calls"]
+    root_logger_instance = mock_log_basics["root_logger"]
     root_logger_instance.setLevel.assert_called_once_with(mock_utils_config.LOG_LEVEL)
+    # ИСПРАВЛЕНО: Проверяем addHandler
     root_logger_instance.addHandler.assert_called_once_with(mock_handler_instance)
 
-    # Проверяем информационное сообщение о старте
-    mock_logging_basic["info"].assert_called_once_with("="*20 + f" Logging started for {mock_utils_config.APP_NAME} " + "="*20)
-
-    # Проверяем, что print не вызывался (не было фатальных ошибок)
-    mock_logging_basic["print"].assert_not_called()
+    root_logger_instance.info.assert_called_once_with(
+        "="*20 + f" Logging started for {mock_utils_config.APP_NAME} " + "="*20
+    )
+    mock_log_basics["print"].assert_not_called()
 
 
 def test_setup_logging_creates_dir(mock_utils_config, mock_path_in_utils, mock_logging_handlers, mock_logging_basic):
-    """Тест создания директории логов, если она не существует."""
-    MockPath, mock_log_dir, _ = mock_path_in_utils
+    MockPath, get_mock_path, path_mocks = mock_path_in_utils
+    MockRotatingFileHandlerClass = mock_logging_handlers
+    mock_log_basics = mock_logging_basic
+
+    mock_log_dir = get_mock_path(Path(mock_utils_config.LOG_FILE).parent)
     mock_log_dir.is_dir.return_value = False # Директория НЕ существует
+
+    # Сброс
+    mock_log_dir.mkdir.reset_mock()
+    mock_log_basics["root_logger"].reset_mock()
+    mock_log_basics["root_logger"].handlers = []
 
     utils.setup_logging()
 
-    # Проверяем создание директории
     mock_log_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
-
-    # Остальные проверки как в test_setup_logging_success
-    mock_logging_handlers.RotatingFileHandler.assert_called_once()
-    mock_logging_basic["getLogger"].assert_called()
-    mock_logging_basic["info"].assert_called_once()
-    mock_logging_basic["print"].assert_not_called()
+    MockRotatingFileHandlerClass.assert_called_once()
+    mock_log_basics["root_logger"].addHandler.assert_called_once()
+    mock_log_basics["root_logger"].info.assert_called_once()
+    mock_log_basics["print"].assert_not_called()
 
 
 def test_setup_logging_dir_creation_error(mock_utils_config, mock_path_in_utils, mock_logging_handlers, mock_logging_basic):
-    """Тест ошибки при создании директории логов."""
-    MockPath, mock_log_dir, _ = mock_path_in_utils
-    mock_log_dir.is_dir.return_value = False # Директория НЕ существует
+    MockPath, get_mock_path, path_mocks = mock_path_in_utils
+    MockRotatingFileHandlerClass = mock_logging_handlers
+    mock_log_basics = mock_logging_basic
+
+    mock_log_dir = get_mock_path(Path(mock_utils_config.LOG_FILE).parent)
+    mock_log_dir.is_dir.return_value = False
     error_message = "Permission denied"
     mock_log_dir.mkdir.side_effect = OSError(error_message)
 
+    # Сброс
+    mock_log_dir.mkdir.reset_mock()
+    MockRotatingFileHandlerClass.reset_mock()
+    mock_log_basics["print"].reset_mock()
+    mock_log_basics["root_logger"].reset_mock()
+    mock_log_basics["root_logger"].handlers = []
+
     utils.setup_logging()
 
-    # Проверяем попытку создания директории
     mock_log_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
-
-    # Проверяем вывод фатальной ошибки в print
-    mock_logging_basic["print"].assert_any_call(
+    mock_log_basics["print"].assert_called_once_with(
         f"FATAL: Could not create log directory {mock_log_dir}: {error_message}"
     )
-
-    # Хендлер и логгер не должны были настраиваться
-    mock_logging_handlers.RotatingFileHandler.assert_not_called()
-    mock_logging_basic["getLogger"].assert_not_called() # getLogger не вызывается до добавления хендлера
-    mock_logging_basic["info"].assert_not_called()
+    MockRotatingFileHandlerClass.assert_not_called()
+    mock_log_basics["root_logger"].addHandler.assert_not_called()
+    mock_log_basics["root_logger"].info.assert_not_called()
 
 
 def test_setup_logging_handler_error(mock_utils_config, mock_path_in_utils, mock_logging_handlers, mock_logging_basic):
-    """Тест ошибки при создании файлового хендлера."""
-    MockPath, mock_log_dir, _ = mock_path_in_utils
-    mock_log_dir.is_dir.return_value = True # Директория существует
+    MockPath, get_mock_path, path_mocks = mock_path_in_utils
+    MockRotatingFileHandlerClass = mock_logging_handlers
+    mock_log_basics = mock_logging_basic
+
+    mock_log_dir = get_mock_path(Path(mock_utils_config.LOG_FILE).parent)
+    mock_log_dir.is_dir.return_value = True
     error_message = "Cannot open file"
-    mock_logging_handlers.RotatingFileHandler.side_effect = Exception(error_message)
+    MockRotatingFileHandlerClass.side_effect = Exception(error_message)
+
+    # Сброс
+    MockRotatingFileHandlerClass.reset_mock()
+    MockRotatingFileHandlerClass.side_effect = Exception(error_message) # Восстанавливаем side_effect
+    mock_log_basics["print"].reset_mock()
+    mock_log_basics["root_logger"].reset_mock()
+    mock_log_basics["root_logger"].handlers = []
+    mock_log_basics["getLogger"].reset_mock()
+    mock_log_basics["getLogger_calls"].clear()
 
     utils.setup_logging()
 
-    # Проверяем попытку создания хендлера
-    mock_logging_handlers.RotatingFileHandler.assert_called_once()
-
-    # Проверяем вывод фатальной ошибки в print (stderr)
-    mock_logging_basic["print"].assert_called_once_with(
+    MockRotatingFileHandlerClass.assert_called_once() # Попытка создания была
+    mock_log_basics["print"].assert_called_once_with(
         f"FATAL: Could not configure file logging to {mock_utils_config.LOG_FILE}: {error_message}",
         file=sys.stderr
     )
-
-    # Логгер не должен был получить этот хендлер, info не вызывается
-    mock_logging_basic["getLogger"].assert_not_called()
-    mock_logging_basic["info"].assert_not_called()
+    # getLogger для root вызывается до ошибки
+    assert None in mock_log_basics["getLogger_calls"] or logging.root.name in mock_log_basics["getLogger_calls"]
+    mock_log_basics["root_logger"].addHandler.assert_not_called()
+    mock_log_basics["root_logger"].info.assert_not_called()
