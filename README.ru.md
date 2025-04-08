@@ -36,21 +36,21 @@ Switch to ENG ---> [![switch to ENG](https://img.shields.io/badge/lang-en-red.sv
 ##
 ```
 ├── .github/
-│   └── workflows/
-│       ├── build-v1.0-release.yml
+│   └── labels.yml
+│   ├── workflows/
+│       ├── .codecov.yml
 │       ├── ci.yml
-│       └── crossbuild-release.yml
-│
-│
-├── v0.1 separated/        
-│   ├── sdloady_RGO_lib.py
-│   └── spready_RGO_lib.py
-│
-│
-├── src/
-│   ├── config.py
-│   ├── ru_geo_lib_parser_by_b0s.py
-│   └── rgo_lib_parser_test.py
+│       ├── CODEOWNERS.bib
+│       ├── crossbuild-release.yml
+│       ├── dependabot.yml
+│       ├── labeler.yml
+│       ├── pull_request_template.md
+│       └── bug_report.yml
+│   ├── ISSUE_TEMPLATE/ 
+│       ├── bug_report.yml
+│       ├── config.yml
+│       ├── documentation.yml
+│       └──  feature_request.yml
 │
 │
 ├── assets/
@@ -59,12 +59,36 @@ Switch to ENG ---> [![switch to ENG](https://img.shields.io/badge/lang-en-red.sv
 │   └── window_bnwbook.png
 │
 │
-├── .gitignore
+├── src/
+│   ├── __init__.py
+│   ├── config.py
+│   ├── gui.py
+│   ├── logic.py
+│   ├── main.py
+│   └── utils.py
+│
+│
+├── tests/        
+│   └── rgo_lib_parser_test.py
+│
+│
+├── v0.1 separated/        
+│   ├── sdloady_RGO_lib.py
+│   └── spready_RGO_lib.py
+│
+│
+├── .codacy.yaml
+├── .gitattributes.bib
+├── .gitignore.bib
+├── .markdownlint.yaml
+├── .pre-commit-config.yaml
 ├── CODE_OF_CONDUCT.md
 ├── CONTRIBUTING.md
-├── LICENSE
+├── LICENSE.bib
 ├── README.md
 ├── README.ru.md
+├── requirements.txt
+└── requirements-dev.txt
 ├── SECURITY.md
-└── requirements.txt
+└── tox.ini
 ```
