@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import logging
+import logging.handlers
 from pathlib import Path
 from typing import Optional
 from PIL import Image
