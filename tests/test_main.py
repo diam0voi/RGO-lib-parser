@@ -7,10 +7,11 @@ from io import StringIO
 import logging
 import importlib
 import os
+import runpy
 
-# Импортируем config ПЕРЕД тестами
+
 from src import config as src_config
-# НЕ импортируем utils и main здесь
+
 
 # --- Фикстуры ---
 
@@ -42,15 +43,17 @@ def patch_main_dependencies(monkeypatch):
             del sys.modules['src.main']
             # Если utils тоже был импортирован, перезагружаем и его, т.к. main его импортирует
             if 'src.utils' in sys.modules:
-                importlib.reload(sys.modules['src.utils'])
+                # Перезагрузка utils может быть сложной, если он сам имеет состояние
+                # или зависимости. Проще его тоже удалить и дать main импортировать заново.
+                del sys.modules['src.utils']
         # Импортируем main после применения патчей
         import src.main as main_module_imported
         main_module = main_module_imported
         assert main_module is not None
         assert hasattr(main_module, 'main')
-        # Проверяем, что setup_logging был вызван при импорте
+        # Проверяем, что setup_logging был вызван при импорте/перезагрузке
         mock_setup.assert_called_once()
-        mock_getLogger.assert_any_call(main_module.__name__)
+        mock_getLogger.assert_any_call(main_module.__name__) # __name__ будет 'src.main' здесь
     except Exception as e:
         # Останавливаем патчи в случае ошибки импорта
         patcher_setup_logging.stop()
@@ -75,6 +78,9 @@ def patch_main_dependencies(monkeypatch):
     monkeypatch.setattr(main_module, "messagebox", mock_mb)
 
     # Сбрасываем моки ПЕРЕД тестом, КРОМЕ setup_logging и getLogger (они вызывались при импорте)
+    # Важно: сбросим их счетчики вызовов, т.к. runpy может вызвать их снова
+    mock_setup.reset_mock()
+    mock_getLogger.reset_mock()
     mock_logger_instance.reset_mock()
     mock_shutdown.reset_mock()
     mock_tk_class.reset_mock()
@@ -83,15 +89,16 @@ def patch_main_dependencies(monkeypatch):
     mock_mb.reset_mock()
 
     yield {
-        "mock_setup_logging": mock_setup, # Возвращаем для проверки вызова при импорте
-        "mock_getLogger": mock_getLogger, # Возвращаем для проверки вызова при импорте
+        "mock_setup_logging": mock_setup,
+        "mock_getLogger": mock_getLogger,
         "mock_logger_instance": mock_logger_instance,
         "mock_Tk": mock_tk_class,
         "mock_root_instance": mock_root_instance,
         "mock_App": mock_app_class,
         "mock_messagebox": mock_mb,
         "mock_shutdown": mock_shutdown,
-        "main_module": main_module
+        "main_module": main_module,
+        "monkeypatch": monkeypatch # <--- Передаем monkeypatch для использования в тесте
     }
 
     # Останавливаем патчи после теста
@@ -123,9 +130,9 @@ def test_main_happy_path(patch_main_dependencies):
     logger_instance = mocks["mock_logger_instance"]
     mock_root_instance = mocks["mock_root_instance"]
 
-    # Проверяем вызовы при импорте (уже сделано в фикстуре)
-    mocks["mock_setup_logging"].assert_called_once()
-    mocks["mock_getLogger"].assert_any_call(main_module.__name__)
+    # Проверяем вызовы при импорте (уже сделано в фикстуре при первом импорте/релоаде)
+    # mocks["mock_setup_logging"].assert_called_once() # Вызывается при импорте
+    # mocks["mock_getLogger"].assert_any_call(main_module.__name__) # Вызывается при импорте
 
     main_module.main()
 
@@ -137,7 +144,6 @@ def test_main_happy_path(patch_main_dependencies):
     logger_instance.info.assert_any_call(f"{src_config.APP_NAME} finished gracefully.")
     logger_instance.critical.assert_not_called()
     mocks["mock_messagebox"].showerror.assert_not_called()
-    # ИСПРАВЛЕНО: Проверяем финальный лог с APP_NAME из импортированного config
     final_log_call = call("="*20 + f" {src_config.APP_NAME} execution ended " + "="*20)
     assert final_log_call in logger_instance.info.call_args_list
     mocks["mock_shutdown"].assert_called_once()
@@ -152,10 +158,6 @@ def test_main_exception_in_mainloop(patch_main_dependencies):
     mock_root_instance.mainloop.side_effect = test_exception
     mock_root_instance.winfo_exists.return_value = True
 
-    # Проверяем вызовы при импорте
-    mocks["mock_setup_logging"].assert_called_once()
-    mocks["mock_getLogger"].assert_any_call(main_module.__name__)
-
     main_module.main()
 
     logger_instance.critical.assert_called_once_with(
@@ -166,7 +168,6 @@ def test_main_exception_in_mainloop(patch_main_dependencies):
     mocks["mock_messagebox"].showerror.assert_called_once()
     args, kwargs = mocks["mock_messagebox"].showerror.call_args
     assert kwargs['parent'] is mock_root_instance
-    # ИСПРАВЛЕНО: Проверяем финальный лог
     final_log_call = call("="*20 + f" {src_config.APP_NAME} execution ended " + "="*20)
     assert final_log_call in logger_instance.info.call_args_list
     mocks["mock_shutdown"].assert_called_once()
@@ -191,11 +192,9 @@ def test_main_exception_in_mainloop_and_messagebox(patch_main_dependencies, mock
     )
     mock_root_instance.winfo_exists.assert_called_once()
     mocks["mock_messagebox"].showerror.assert_called_once()
-    # ИСПРАВЛЕНО: Проверяем stderr
     stderr_output = mock_stderr.getvalue()
     assert f"FATAL UNHANDLED ERROR: {main_exception}" in stderr_output
     assert f"Also failed to show messagebox: {messagebox_exception}" in stderr_output
-    # ИСПРАВЛЕНО: Проверяем финальный лог
     final_log_call = call("="*20 + f" {src_config.APP_NAME} execution ended " + "="*20)
     assert final_log_call in logger_instance.info.call_args_list
     mocks["mock_shutdown"].assert_called_once()
@@ -221,7 +220,6 @@ def test_main_exception_tk_init_fails(patch_main_dependencies):
     mocks["mock_messagebox"].showerror.assert_called_once()
     args, kwargs = mocks["mock_messagebox"].showerror.call_args
     assert kwargs['parent'] is None
-    # ИСПРАВЛЕНО: Проверяем финальный лог
     final_log_call = call("="*20 + f" {src_config.APP_NAME} execution ended " + "="*20)
     assert final_log_call in logger_instance.info.call_args_list
     mocks["mock_shutdown"].assert_called_once()
@@ -246,7 +244,38 @@ def test_main_exception_root_does_not_exist(patch_main_dependencies):
     mocks["mock_messagebox"].showerror.assert_called_once()
     args, kwargs = mocks["mock_messagebox"].showerror.call_args
     assert kwargs['parent'] is None
-    # ИСПРАВЛЕНО: Проверяем финальный лог
     final_log_call = call("="*20 + f" {src_config.APP_NAME} execution ended " + "="*20)
     assert final_log_call in logger_instance.info.call_args_list
     mocks["mock_shutdown"].assert_called_once()
+
+
+
+def test_main_entry_point(patch_main_dependencies):
+    """Тестирует вызов main() через точку входа if __name__ == '__main__'."""
+    mocks = patch_main_dependencies
+    main_module = mocks["main_module"]
+    monkeypatch = mocks["monkeypatch"] # Получаем monkeypatch из фикстуры
+
+    # Мокаем саму функцию main внутри модуля main, чтобы не выполнять её логику повторно
+    mock_main_func = MagicMock(name="mock_main_func_in_module")
+    monkeypatch.setattr(main_module, "main", mock_main_func)
+
+    # Используем runpy для запуска модуля 'src.main' как основного скрипта.
+    # runpy установит __name__ = '__main__' внутри выполняемого модуля.
+    # Важно: все патчи из patch_main_dependencies уже активны.
+    # Модуль-уровневый код (setup_logging, getLogger) выполнится СНОВА при вызове runpy.
+    # Это нормально, т.к. наши моки перехватят эти вызовы.
+    try:
+        runpy.run_module('src.main', run_name='__main__')
+    except Exception as e:
+        # Если runpy падает, это проблема в тесте или настройке
+        pytest.fail(f"runpy.run_module failed: {e}")
+
+    # Проверяем, что функция main (которую мы замокали) была вызвана один раз
+    # благодаря блоку if __name__ == "__main__":
+    mock_main_func.assert_called_once()
+
+    # Дополнительно можно проверить, что модуль-уровневый код был вызван runpy
+    # (это будет второй вызов за время жизни теста, первый был при импорте в фикстуре)
+    # mocks["mock_setup_logging"].assert_called() # Проверить, что был вызван хотя бы раз
+    # mocks["mock_getLogger"].assert_any_call('__main__') # Проверить, что логгер был запрошен с именем __main__
