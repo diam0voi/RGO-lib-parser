@@ -429,3 +429,10 @@ downloaded_pages/
 final_spreads/
 *_output/
 *_output_smart/
+
+# dev stuff
+.mypy_cache/
+.pyteset_cache/
+reports/
+.tox/
+*.egg-info/

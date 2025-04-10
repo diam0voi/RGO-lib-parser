@@ -91,8 +91,6 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 ├── pyproject.toml
 ├── README.md
 ├── README.ru.md
-├── requirements.txt
-├── requirements-dev.txt
 ├── SECURITY.md
 ├── tox.ini
 └── uv.lock
