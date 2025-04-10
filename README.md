@@ -35,21 +35,21 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 ##
 ```
 ├── .github/
-│   └── labels.yml
+│   ├── ISSUE_TEMPLATE/ 
+│       ├── bug_report.yml
+│       ├── config.yml
+│       ├── documentation.yml
+│       └── feature_request.yml
 │   ├── workflows/
 │       ├── .codecov.yml
 │       ├── ci.yml
-│       ├── CODEOWNERS.bib
 │       ├── crossbuild-release.yml
 │       ├── dependabot.yml
 │       ├── labeler.yml
 │       ├── pull_request_template.md
 │       └── bug_report.yml
-│   ├── ISSUE_TEMPLATE/ 
-│       ├── bug_report.yml
-│       ├── config.yml
-│       ├── documentation.yml
-│       └──  feature_request.yml
+│   ├── CODEOWNERS.bib
+│   └── labels.yml
 │
 │
 ├── assets/
@@ -68,7 +68,11 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 │
 │
 ├── tests/        
-│   └── rgo_lib_parser_test.py
+│   ├── __init__.py
+│   ├── test_config.py
+│   ├── test_logic.py
+│   ├── test_main.py
+│   └── test_utils.py
 │
 │
 ├── v0.1 separated/        
@@ -84,10 +88,12 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 ├── CODE_OF_CONDUCT.md
 ├── CONTRIBUTING.md
 ├── LICENSE.bib
+├── pyproject.toml
 ├── README.md
 ├── README.ru.md
 ├── requirements.txt
-└── requirements-dev.txt
+├── requirements-dev.txt
 ├── SECURITY.md
-└── tox.ini
+├── tox.ini
+└── uv.lock
 ```

@@ -32,7 +32,7 @@ def main():
             print(f"FATAL UNHANDLED ERROR: {main_e}", file=sys.stderr)
             print(f"Also failed to show messagebox: {mb_e}", file=sys.stderr)
     finally:
-        logging.info("="*20 + f" {config.APP_NAME} execution ended " + "="*20)
+        logger.info("="*20 + f" {config.APP_NAME} execution ended " + "="*20)
         logging.shutdown()
 
 if __name__ == "__main__":
