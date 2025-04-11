@@ -1,5 +1,5 @@
 # RGO-lib-parser: description
-На русском ---> [![На Русском](https://img.shields.io/badge/lang-ru-red.svg?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/blob/main/README.ru.md)
+На русском --> [![Ru](https://img.shields.io/badge/lang-ru-red.svg?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/blob/main/README.ru.md)
 
 ### Simple thing for a simple task
 At its core - you're looking at the parser designed for a specific site with its somewhat bizarre data storage format. This site, however, contains scans of rare and very niche historical literary sources that you may need, as for example, for an interactive panel at certain exhibition. But you can't just get them! You forced to only watch! So the idea was born to automate the process of manually creating a whole plethora of screenshots: I decided to make life easier for my bros who had to do this. 
@@ -48,7 +48,7 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 │       ├── labeler.yml
 │       ├── pull_request_template.md
 │       └── bug_report.yml
-│   ├── CODEOWNERS.bib
+│   ├── CODEOWNERS(.bib)
 │   └── labels.yml
 │
 │
@@ -60,10 +60,16 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 │
 ├── src/
 │   ├── __init__.py
+│   ├── app_state.py
 │   ├── config.py
 │   ├── gui.py
+│   ├── image_processing.py
 │   ├── logic.py
 │   ├── main.py
+│   ├── settings_manager.py
+│   ├── task_manager.py
+│   ├── types.py
+│   ├── ui_builder.py
 │   └── utils.py
 │
 │
@@ -81,13 +87,13 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 │
 │
 ├── .codacy.yaml
-├── .gitattributes.bib
-├── .gitignore.bib
+├── .gitattributes(.bib)
+├── .gitignore(.bib)
 ├── .markdownlint.yaml
 ├── .pre-commit-config.yaml
 ├── CODE_OF_CONDUCT.md
 ├── CONTRIBUTING.md
-├── LICENSE.bib
+├── LICENSE(.bib)
 ├── pyproject.toml
 ├── README.md
 ├── README.ru.md
