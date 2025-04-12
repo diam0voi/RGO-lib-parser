@@ -15,7 +15,7 @@ repos:
       - id: check-merge-conflict
    
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.5.0 # automatically updated by Commitizen
+    rev: v4.5.0
     hooks:
       - id: commitizen
       - id: commitizen-branch

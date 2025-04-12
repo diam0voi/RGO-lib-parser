@@ -1,8 +1,8 @@
-# src/app_state.py
 import tkinter as tk
 import logging
 from pathlib import Path
 from typing import Optional
+import os
 
 # Импортируем config для дефолтных значений
 # Предполагаем, что config.py находится уровнем выше или настроен PYTHONPATH
@@ -94,13 +94,12 @@ class AppState:
                 errors.append(f"Папка для страниц ('{pages_dir}' не найдена)")
             else:
                 try:
-                    # Проверка на пустоту (может быть медленной для больших папок)
-                    # if not any(f for f in pages_path.iterdir() if f.is_file()):
-                    #     errors.append(f"Папка для страниц ('{pages_dir}' пуста)")
-                    # Решил убрать проверку на пустоту из валидации, т.к. логика обработки сама это проверит
+                    os.listdir(pages_path)
+                    logger.debug(f"Read access check passed for directory: {pages_path}")
                     pass
-                except Exception as e:
-                    errors.append(f"Папка для страниц (ошибка чтения: {e})")
+                except OSError as e:
+                    logger.warning(f"OS error during access check for {pages_path}: {e}", exc_info=True)
+                    errors.append(f"Папка для страниц (ошибка доступа/чтения: {e})")
 
         logger.debug(f"Processing validation result: {errors}")
         return errors

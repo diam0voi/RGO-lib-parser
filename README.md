@@ -93,6 +93,7 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 ├── .pre-commit-config.yaml
 ├── CODE_OF_CONDUCT.md
 ├── CONTRIBUTING.md
+├── CONTRIBUTING.ru.md
 ├── LICENSE(.bib)
 ├── pyproject.toml
 ├── README.md
