@@ -100,6 +100,8 @@ branch = true
 omit = [
     "src/gui.py",
     "src/ui_builder.py",  # Пока не решил как тестировать
+    "src/__init__.py",
+    "src/types.py",  # Нечего покрывать
 ]
 
 
