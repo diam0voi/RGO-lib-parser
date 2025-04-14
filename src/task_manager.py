@@ -238,13 +238,16 @@ class TaskManager:
             # Проверяем результат скачивания
             if download_success_count == 0:
                 self.status_cb("--- Скачивание не удалось (0 страниц), обработка пропущена ---")
+                # Сообщение об ошибке покажет _thread_wrapper, если мы перебросим исключение
+                # Но для этого случая (0 страниц) исключение не бросается, а делается return.
+                # Значит, сообщение нужно оставить здесь.
                 self.show_message_cb('error', "Ошибка скачивания", f"Не удалось скачать ни одной страницы.\nОбработка не будет запущена.\nПроверьте лог ({config.LOG_FILE}).")
                 return # Выход из последовательности
 
             elif download_success_count < total_dl_pages:
                  msg = f"--- Скачивание завершено с ошибками ({success_count}/{total_dl_pages}). Продолжаем обработку скачанных... ---"
                  self.status_cb(msg)
-                 self.show_message_cb('warning', "Скачивание с ошибками", f"Скачано {success_count} из {t} страниц.\nОбработка будет запущена для скачанных файлов.")
+                 self.show_message_cb('warning', "Скачивание с ошибками", f"Скачано {success_count} из {total_dl_pages} страниц.\nОбработка будет запущена для скачанных файлов.")
             else:
                  self.status_cb(f"--- Скачивание успешно завершено ({success_count}/{total_dl_pages}) ---")
 
@@ -271,13 +274,14 @@ class TaskManager:
 
         except Exception as e:
             error_occurred = True
-            final_message = f"{task_name}: Критическая ошибка: {e}"
+            # final_message = f"{task_name}: Критическая ошибка: {e}" # Это установит _thread_wrapper
             logger.critical(f"Critical error in combined sequence ({task_name}): {e}", exc_info=True)
-            stage = "обработки" if download_success_count > 0 else "скачивания"
-            self.show_message_cb('error', "Критическая ошибка", f"Ошибка на этапе {s}:\n{final_message}\n\nПодробности в лог-файле:\n{config.LOG_FILE}")
-        # finally здесь не нужен, т.к. эта функция вызывается внутри _thread_wrapper,
-        # который имеет свой finally для общих действий (сброс кнопок, потока и т.д.)
-        # Но нам нужно обработать открытие папки специфично для этой последовательности
+            # stage = "обработки" if download_success_count > 0 else "скачивания" # Не нужно для сообщения здесь
+            # ---> УДАЛЕН ВЫЗОВ show_message_cb <---
+            # self.show_message_cb('error', "Критическая ошибка", f"Ошибка на этапе {stage}:\n{final_message}\n\nПодробности в лог-файле:\n{config.LOG_FILE}")
+            raise # Перевыбрасываем исключение для _thread_wrapper
+        # finally нет, т.к. оно вызывается внутри _thread_wrapper,
+        # который имеет свой finally для общих действий.
 
         # Этот код выполнится только если не было исключений и прерываний до этого момента
         if final_folder_to_open and overall_success and not self.stop_event.is_set() and self.root:

@@ -115,7 +115,7 @@ def process_images_in_folders(
 
         # --- Вариант 1: Копирование (Обложка или уже готовый разворот) ---
         if page_index == 0 or current_is_spread:
-            output_filename = f"spread_{current_page_num:03d}{current_file_path.suffix}"
+            output_filename = f"{current_page_num:03d}{current_file_path.suffix}"
             output_file_path = output_path / output_filename
             action_desc = 'обложку' if page_index == 0 else 'готовый разворот'
             status_msg = f"Копирую {action_desc}: {current_file_path.name} -> {output_filename}"
@@ -144,7 +144,7 @@ def process_images_in_folders(
 
                 # --- Вариант 2.1: Следующий тоже одиночный ---
                 if next_is_single:
-                    output_filename = f"spread_{current_page_num:03d}-{next_page_num:03d}.jpg"
+                    output_filename = f"{current_page_num:03d}-{next_page_num:03d}.jpg"
                     output_file_path = output_path / output_filename
                     status_msg = f"Создаю разворот: {current_file_path.name} + {next_file_path.name} -> {output_filename}"
                     status_callback(status_msg)
@@ -202,7 +202,7 @@ def process_images_in_folders(
 
                 # --- Вариант 2.2: Текущий одиночный, следующий - разворот ---
                 else:
-                    output_filename = f"spread_{current_page_num:03d}{current_file_path.suffix}"
+                    output_filename = f"{current_page_num:03d}{current_file_path.suffix}"
                     output_file_path = output_path / output_filename
                     status_msg = f"Копирую одиночную страницу (следующий - разворот): {current_file_path.name} -> {output_filename}"
                     status_callback(status_msg)
@@ -218,7 +218,7 @@ def process_images_in_folders(
 
             # --- Вариант 2.3: Текущий одиночный - последний файл ---
             else:
-                output_filename = f"spread_{current_page_num:03d}{current_file_path.suffix}"
+                output_filename = f"{current_page_num:03d}{current_file_path.suffix}"
                 output_file_path = output_path / output_filename
                 status_msg = f"Копирую последнюю одиночную страницу: {current_file_path.name} -> {output_filename}"
                 status_callback(status_msg)
