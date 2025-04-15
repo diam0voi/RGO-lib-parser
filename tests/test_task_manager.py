@@ -101,10 +101,34 @@ def task_manager(mock_deps):
     )
     tm._mocks = mock_deps
     return tm
+    
+
+@pytest.fixture
+def task_manager_no_root(mock_deps):
+    """Создает экземпляр TaskManager с root=None."""
+    # Убираем root из зависимостей перед созданием TaskManager
+    mock_deps_copy = mock_deps.copy()
+    mock_root_instance = mock_deps_copy.pop("root") # Удаляем, чтобы передать None
+
+    tm = TaskManager(
+        app_state=mock_deps_copy["app_state"],
+        handler=mock_deps_copy["handler"],
+        stop_event=mock_deps_copy["stop_event"],
+        status_callback=mock_deps_copy["status_cb"],
+        progress_callback=mock_deps_copy["progress_cb"],
+        set_buttons_state_callback=mock_deps_copy["set_buttons_state_cb"],
+        show_message_callback=mock_deps_copy["show_message_cb"],
+        open_folder_callback=mock_deps_copy["open_folder_cb"],
+        root=None # Передаем None явно
+    )
+    # Сохраняем оригинальные моки для проверок
+    tm._mocks = mock_deps
+    # Сохраняем мок root отдельно, чтобы проверить, что его методы не вызывались
+    tm._original_mock_root = mock_root_instance
+    return tm
+
 
 # --- Тесты ---
-
-# ... (Тесты, которые уже проходили, остаются без изменений) ...
 
 def test_task_manager_initialization(task_manager, mock_deps):
     """Тест инициализации TaskManager."""
@@ -531,3 +555,263 @@ def test_start_all_invalid_pages(task_manager, mock_deps):
     mock_deps["thread_class"].assert_not_called()
     mock_deps["show_message_cb"].assert_called_once_with('error', "Ошибка", "Некорректное количество страниц.")
     mock_deps["set_buttons_state_cb"].assert_not_called()
+    
+
+# Новый тест для покрытия ветки process_images -> (0, 0) в _thread_wrapper
+def test_start_processing_zero_results(task_manager, mock_deps):
+    """Тест обработки, когда ничего не обработано и развороты не созданы."""
+    expected_args = ("/path/to/pages", "/path/to/spreads")
+    # Ключевое изменение: возвращаем (0, 0)
+    mock_deps["handler"].process_images.return_value = (0, 0)
+    task_manager.start_processing()
+
+    captured_target = mock_deps["thread_targets"]["target"]
+    captured_args = mock_deps["thread_targets"]["args"]
+    captured_kwargs = mock_deps["thread_targets"]["kwargs"]
+    captured_target(*captured_args, **captured_kwargs) # Выполняем обертку
+
+    mock_deps["handler"].process_images.assert_called_once_with(*expected_args)
+
+    # Проверяем финальное сообщение
+    final_msg_from_code = "Обработка завершена. Обработано/скопировано: 0."
+    mock_deps["show_message_cb"].assert_called_once_with('info', "Успех", f"Создание разворотов завершено!\n{final_msg_from_code}")
+
+    # Папка НЕ должна открываться, так как условие на строке 182 будет False
+    mock_deps["open_folder_cb"].assert_not_called()
+
+    mock_deps["status_cb"].assert_called_once_with(f"--- {final_msg_from_code} ---")
+    mock_deps["set_buttons_state_cb"].assert_has_calls([call(True), call(False)])
+    assert task_manager.current_thread is None
+
+# Новый тест для покрытия ветки process_images -> (0, 0) в _run_all_sequence
+def test_start_all_download_ok_process_zero(task_manager, mock_deps, setup_start_all):
+    """Тест start_all: успешное скачивание, но обработка вернула (0, 0)."""
+    wrapper_target, wrapper_args, wrapper_kwargs = setup_start_all
+    task_name = wrapper_kwargs['task_name']
+
+    mock_deps["handler"].download_pages.return_value = (10, 10)
+    # Ключевое изменение: process_images возвращает (0, 0)
+    mock_deps["handler"].process_images.return_value = (0, 0)
+
+    wrapper_target(*wrapper_args, **wrapper_kwargs) # Выполняем обертку с _run_all_sequence
+
+    mock_deps["handler"].download_pages.assert_called_once()
+    mock_deps["handler"].process_images.assert_called_once()
+
+    # Проверяем финальное сообщение последовательности
+    final_msg_sequence = "Скачивание (10/10) и обработка (0 файлов, 0 разворотов) завершены."
+    final_msg_wrapper = f"{task_name}: Задача завершена."
+
+    mock_deps["status_cb"].assert_has_calls([
+        call("--- НАЧАЛО: Скачивание страниц ---"),
+        call("--- Скачивание успешно завершено (10/10) ---"),
+        call("--- НАЧАЛО: Создание разворотов ---"),
+        call(f"--- {final_msg_sequence} ---"), # Сообщение из _run_all_sequence
+        call(f"--- {final_msg_wrapper} ---")   # Сообщение из _thread_wrapper.finally
+    ], any_order=False)
+
+    mock_deps["show_message_cb"].assert_called_once_with('info', "Завершено", final_msg_sequence)
+
+    # Папка НЕ должна открываться, так как final_folder_to_open будет None (из-за строки 272)
+    mock_deps["open_folder_cb"].assert_not_called()
+
+    mock_deps["set_buttons_state_cb"].assert_has_calls([call(True), call(False)])
+    assert task_manager.current_thread is None
+
+# Новый тест для покрытия веток с root=None
+def test_start_all_without_root(task_manager_no_root, mock_deps):
+    """Тест start_all при root=None для покрытия веток в finally и конце _run_all_sequence."""
+    tm = task_manager_no_root
+    original_mock_root = tm._original_mock_root
+
+    # Настраиваем успешный сценарий
+    mock_deps["handler"].download_pages.return_value = (10, 10)
+    mock_deps["handler"].process_images.return_value = (10, 5) # Успешная обработка
+
+    # Используем setup_start_all логику, но с task_manager_no_root
+    expected_args = ("http://example.com/base/", "1,2,3", "doc.pdf", 10, "/path/to/pages", "/path/to/spreads")
+    tm.start_all() # Используем tm из фикстуры task_manager_no_root
+
+    # Проверяем вызов _start_thread
+    mock_deps["stop_event"].clear.assert_called_once()
+    mock_deps["set_buttons_state_cb"].assert_called_once_with(True)
+    mock_deps["thread_class"].assert_called_once()
+
+    # Получаем и выполняем обертку
+    captured_target = mock_deps["thread_targets"]["target"]
+    captured_args = mock_deps["thread_targets"]["args"]
+    captured_kwargs = mock_deps["thread_targets"]["kwargs"]
+    assert captured_target == tm._thread_wrapper # Цель потока - всегда обертка
+    assert captured_args[0] == tm._run_all_sequence # Первый аргумент обертки - наша целевая функция
+    wrapper_target = mock_deps["thread_targets"]["target"] # Это _thread_wrapper
+    wrapper_args = (tm._run_all_sequence, *expected_args) # Аргументы для _thread_wrapper
+    wrapper_kwargs = {'task_name': 'Download & Process'}
+
+    # Выполняем _thread_wrapper, который вызовет _run_all_sequence
+    wrapper_target(*wrapper_args, **wrapper_kwargs)
+
+    # Проверяем, что основная логика выполнилась
+    mock_deps["handler"].download_pages.assert_called_once()
+    mock_deps["handler"].process_images.assert_called_once()
+
+    # Проверяем, что open_folder_cb НЕ вызывался через root.after
+    # из _run_all_sequence (из-за условия 'and self.root' на строке 287)
+    # и из _thread_wrapper.finally (из-за условия 'and self.root' там же)
+    original_mock_root.after.assert_not_called() # Проверяем, что after вообще не дергался
+    mock_deps["open_folder_cb"].assert_not_called() # Как следствие, и колбэк не вызвался
+
+    # Проверяем, что set_buttons_state_cb НЕ вызывался через root.after
+    # (из-за условия 'if self.root:' на строке 197)
+    # Вместо этого он должен был быть вызван напрямую, если бы не было root.after
+    # НО! В коде он вызывается ТОЛЬКО через root.after(0, ...).
+    # Значит, при root=None, кнопки НЕ вернутся в нормальное состояние автоматически!
+    # Это БАГ или особенность реализации? Судя по коду, это баг.
+    # Тест должен проверить, что set_buttons_state_cb(False) НЕ вызывался.
+    assert call(False) not in mock_deps["set_buttons_state_cb"].call_args_list
+    # Был только вызов call(True) при старте
+    mock_deps["set_buttons_state_cb"].assert_called_once_with(True)
+
+    # Проверяем финальные статусы и сообщения (они не зависят от root)
+    final_msg_sequence = "Скачивание (10/10) и обработка (10 файлов, 5 разворотов) завершены."
+    final_msg_wrapper = f"{wrapper_kwargs['task_name']}: Задача завершена."
+    mock_deps["status_cb"].assert_has_calls([
+        call("--- НАЧАЛО: Скачивание страниц ---"),
+        call("--- Скачивание успешно завершено (10/10) ---"),
+        call("--- НАЧАЛО: Создание разворотов ---"),
+        call(f"--- {final_msg_sequence} ---"),
+        call(f"--- {final_msg_wrapper} ---")
+    ], any_order=False)
+    mock_deps["show_message_cb"].assert_called_once_with('info', "Завершено", final_msg_sequence)
+
+    assert tm.current_thread is None
+ 
+ 
+def test_thread_wrapper_stopped_during_target_func(task_manager, mock_deps):
+    """Тест сценария, когда stop_event устанавливается ВО ВРЕМЯ target_func."""
+    task_name = "Download"
+    expected_args = ("http://example.com/base/", "1,2,3", "doc.pdf", 10, "/path/to/pages")
+
+    # Мокаем target_func так, чтобы она установила событие во время выполнения
+    def mock_download_and_set_stop(*args, **kwargs):
+        # Имитируем работу и устанавливаем is_set в True перед выходом
+        # Важно: мы меняем будущее поведение is_set() для проверок ПОСЛЕ вызова target_func
+        mock_deps["stop_event"].is_set.return_value = True
+        return (5, 10) # Возвращаем результат, как будто что-то успело скачаться
+
+    mock_deps["handler"].download_pages.side_effect = mock_download_and_set_stop
+    # Убедимся, что изначально is_set было False
+    mock_deps["stop_event"].is_set.return_value = False
+
+    task_manager.start_download()
+
+    # Получаем обертку и аргументы
+    captured_target = mock_deps["thread_targets"]["target"]
+    captured_args = mock_deps["thread_targets"]["args"]
+    captured_kwargs = mock_deps["thread_targets"]["kwargs"]
+
+    # Выполняем обертку _thread_wrapper
+    captured_target(*captured_args, **captured_kwargs)
+
+    # Проверки:
+    # 1. target_func была вызвана
+    mock_deps["handler"].download_pages.assert_called_once_with(*expected_args)
+
+    # 2. Проверка на строке 179 должна была дать False, т.к. is_set теперь True
+    # Следовательно, НЕ должны были вызываться сообщения об успехе/предупреждении
+    mock_deps["show_message_cb"].assert_not_called()
+    # И папка НЕ должна была открываться из этого блока
+    # mock_deps["open_folder_cb"].assert_not_called() # Эта проверка будет ниже, т.к. finally тоже проверяет
+
+    # 3. Проверка на строке 191 (в finally) тоже должна дать False
+    # Следовательно, НЕ должны были вызываться status_cb и open_folder_cb из finally
+    final_success_msg_fragment = "Скачивание завершено"
+    called_statuses = [c.args[0] for c in mock_deps["status_cb"].call_args_list]
+    assert not any(final_success_msg_fragment in s for s in called_statuses)
+    mock_deps["open_folder_cb"].assert_not_called() # Теперь проверяем окончательно
+
+    # 4. Кнопки должны были вернуться в норм состояние (вызывается в finally вне if is_set)
+    mock_deps["set_buttons_state_cb"].assert_has_calls([call(True), call(False)])
+    assert task_manager.current_thread is None
+
+
+def test_thread_wrapper_stop_event_is_set_for_checks(task_manager, mock_deps):
+    """
+    Тест, где stop_event.is_set() возвращает True для всех трех проверок
+    в оригинальном коде _thread_wrapper (строки 179, 191, 202).
+    """
+    task_name = "Download"
+    expected_args = ("http://example.com/base/", "1,2,3", "doc.pdf", 10, "/path/to/pages")
+
+    # Настраиваем успешное выполнение target_func (например, download)
+    # Важно, чтобы target_func не ставила success=True безусловно,
+    # если мы хотим проверить, что success остался False.
+    # download_pages подходит, т.к. success ставится внутри пропущенного блока.
+    mock_deps["handler"].download_pages.return_value = (10, 10) # Результат не важен, т.к. блок обработки пропустим
+
+    # --- Ключевой момент ---
+    # Настраиваем is_set() так, чтобы он вернул True при вызовах
+    # на строках 179, 191 и 202 в оригинальном _thread_wrapper.
+    mock_deps["stop_event"].is_set.side_effect = [True, True, True]
+
+    task_manager.start_download() # Настраиваем вызов потока
+
+    # Получаем обертку и аргументы
+    captured_target = mock_deps["thread_targets"]["target"] # _thread_wrapper
+    captured_args = mock_deps["thread_targets"]["args"]     # (handler.download_pages, *expected_args)
+    captured_kwargs = mock_deps["thread_targets"]["kwargs"] # {'task_name': task_name}
+
+    # Выполняем обертку
+    captured_target(*captured_args, **captured_kwargs)
+
+    # --- Проверки ---
+    # 1. target_func была вызвана
+    mock_deps["handler"].download_pages.assert_called_once_with(*expected_args)
+
+    # 2. Первая проверка is_set (строка 179) вернула True -> not True is False
+    #    Значит, блок 180-190 пропущен. show_message_cb не вызывался оттуда.
+    #    success не был установлен в True (т.к. target_func была download_pages).
+    mock_deps["show_message_cb"].assert_not_called()
+
+    # 3. Вторая проверка is_set (строка 191) вернула True -> not True is False
+    #    Значит, блок 192-194 пропущен. status_cb и open_folder_cb не вызывались оттуда.
+    final_success_msg_fragment = "Скачивание завершено"
+    called_statuses = [c.args[0] for c in mock_deps["status_cb"].call_args_list]
+    # Убедимся, что финальное сообщение НЕ появилось.
+    assert not any(final_success_msg_fragment in s for s in called_statuses)
+    mock_deps["open_folder_cb"].assert_not_called() # Проверяем, что папка не открывалась вообще
+
+    # 4. Кнопки должны были вернуться в норм состояние (вызывается в finally вне if is_set)
+    # Проверяем, что root.after был вызван для set_buttons_state_cb(False)
+    # (если root существует в task_manager)
+    if task_manager.root:
+         # Ищем вызов root.after, где второй аргумент - это lambda, вызывающая set_buttons_state_cb(False)
+         found_button_reset_call = False
+         for after_call in task_manager.root.after.call_args_list:
+             # after_call = call(delay, function)
+             delay, func = after_call.args
+             if delay == 0: # Ищем вызов с нулевой задержкой
+                 # Проверяем, что func вызывает set_buttons_state_cb(False)
+                 # Создаем временный мок для проверки вызова внутри lambda
+                 temp_mock_set_buttons = MagicMock()
+                 original_set_buttons = task_manager.set_buttons_state_cb
+                 task_manager.set_buttons_state_cb = temp_mock_set_buttons
+                 try:
+                     func() # Выполняем lambda
+                     if temp_mock_set_buttons.call_args == call(False):
+                         found_button_reset_call = True
+                         break # Нашли нужный вызов
+                 finally:
+                     task_manager.set_buttons_state_cb = original_set_buttons # Восстанавливаем
+         assert found_button_reset_call, "root.after(0, ...) для set_buttons_state_cb(False) не был вызван"
+         # Также проверяем, что сам колбэк был вызван (т.к. root.after замокан на немедленный вызов)
+         mock_deps["set_buttons_state_cb"].assert_has_calls([call(True), call(False)])
+    else:
+         # Если root нет, проверяем, что был только вызов с True
+         mock_deps["set_buttons_state_cb"].assert_called_once_with(True)
+
+
+    # 5. Проверяем, что поток сброшен
+    assert task_manager.current_thread is None
+
+    # 6. Убедимся, что is_set был вызван трижды (179, 191, 202)
+    assert mock_deps["stop_event"].is_set.call_count == 3

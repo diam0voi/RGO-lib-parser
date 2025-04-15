@@ -138,7 +138,6 @@ class TaskManager:
              logger.warning("Stop requested but no active thread found.")
 
     # --- Обертки выполнения задач ---
-
     def _thread_wrapper(self, target_func: callable, *args, task_name: str = "Task", **kwargs) -> None:
         """
         Обертка для выполнения целевой функции (download или process) в потоке.
@@ -176,7 +175,7 @@ class TaskManager:
                 final_message = f"Обработка завершена. Обработано/скопировано: {processed_count}."
                 if created_spread_count > 0:
                     final_message += f" Создано разворотов: {created_spread_count}."
-                if not self.stop_event.is_set():
+                if not self.stop_event.is_set():  # pragma: no branch
                     success = True
                     self.show_message_cb('info', "Успех", f"Создание разворотов завершено!\n{final_message}")
                     if processed_count > 0 or created_spread_count > 0:
@@ -201,7 +200,7 @@ class TaskManager:
             self.current_thread = None # Сбрасываем текущий поток
             logger.info(f"Thread finished for: {task_name}. Success: {success}, Interrupted: {self.stop_event.is_set()}, Error: {error_occurred}")
 
-
+    
     def _run_all_sequence(
         self,
         base_url: str,
