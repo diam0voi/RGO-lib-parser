@@ -46,8 +46,7 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 │       ├── crossbuild-release.yml
 │       ├── dependabot.yml
 │       ├── labeler.yml
-│       ├── pull_request_template.md
-│       └── bug_report.yml
+│       └── pull_request_template.md
 │   ├── CODEOWNERS(.bib)
 │   └── labels.yml
 │
@@ -75,9 +74,14 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 │
 ├── tests/        
 │   ├── __init__.py
+│   ├── test_app_state.py
 │   ├── test_config.py
+│   ├── test_image_processing.py
 │   ├── test_logic.py
 │   ├── test_main.py
+│   ├── test_settings_manager.py
+│   ├── test_task_manager.py
+│   ├── test_types.py
 │   └── test_utils.py
 │
 │
