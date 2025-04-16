@@ -65,27 +65,91 @@ dev = [
 
 # --- Настройки инструментов ---
 [tool.ruff]
-line-length = 88
 src = ["src"]
+line-length = 88
 target-version = "py39"
-
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
 
 [tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # Pyflakes
-    "I",  # isort
-    "UP", # pyupgrade
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "SIM",# flake8-simplify
+    "E",   # pycodestyle errors (базовые ошибки стиля)
+    "W",   # pycodestyle warnings (предупреждения стиля)
+    "F",   # Pyflakes (логические ошибки, неиспользуемые переменные/импорты)
+    "I",   # isort (сортировка импортов)
+    "UP",  # pyupgrade (модернизация синтаксиса Python до target-version)
+    "B",   # flake8-bugbear (потенциальные баги и сомнительные практики)
+    "C4",  # flake8-comprehensions (стиль списковых включений и генераторов)
+    "SIM", # flake8-simplify (упрощение кода, например, `if cond: return True else: return False` -> `return cond`)
+    "A",   # flake8-builtins (предупреждает о переопределении встроенных имен)
+    "ISC", # flake8-implicit-str-concat (находит неявную конкатенацию строк в одной строке)
+    "N",   # pep8-naming (проверка имен переменных, функций, классов на соответствие PEP 8)
+    "D",   # pydocstyle (проверка наличия и стиля докстрингов - ОЧЕНЬ полезно, но может быть ОЧЕНЬ шумно вначале, если докстрингов нет)
+    "TRY", # flake8-tryceratops (лучшие практики обработки исключений)
+    "RUF", # Ruff-specific rules (специфичные правила Ruff, часто очень полезные)
 ]
-ignore = []
-# exclude = []
 
+ignore = [
+    "D100", # Missing docstring in public module
+    "D101", # Missing docstring in public class
+    "D102", # Missing docstring in public method
+    "D103", # Missing docstring in public function
+    "D104", # Missing docstring in public package
+    "D105", # Missing docstring in magic method
+    "D106", # Missing docstring in public nested class
+    "D107", # Missing docstring in __init__
+    "T201", # 'print' found
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "E501",
+    "F841",
+    "TRY003",
+    "N806",
+    "D205",
+    "TRY300",
+    "TRY400",
+    "UP006",
+    "UP035",
+    "SIM103",
+    "A005",
+]
+
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+force-sort-within-sections = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
 
 
 [tool.pytest.ini_options]

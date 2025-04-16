@@ -1,19 +1,19 @@
-import os
-import re
-import sys
 import logging
 import logging.handlers
 from pathlib import Path
+import re
+import sys
 from typing import Optional
+
 from PIL import Image
 
 from . import config
 
 logger = logging.getLogger(__name__)
 
+
 def get_page_number(filename: str) -> int:
-    """
-    Извлекает номер страницы из имени файла согласно логике сайта.
+    """Извлекает номер страницы из имени файла согласно логике сайта.
     Ищет первое число в строке.
 
     Args:
@@ -24,13 +24,12 @@ def get_page_number(filename: str) -> int:
     """
     if not filename:
         return -1
-    match = re.search(r'\d+', filename)
+    match = re.search(r"\d+", filename)
     return int(match.group()) if match else -1
 
 
 def is_likely_spread(image_path: str | Path, threshold: Optional[float] = None) -> bool:
-    """
-    Проверяет, может ли изображение уже быть разворотом,
+    """Проверяет, может ли изображение уже быть разворотом,
     основываясь на соотношении сторон (ширина / высота).
 
     Args:
@@ -51,19 +50,22 @@ def is_likely_spread(image_path: str | Path, threshold: Optional[float] = None) 
                 logger.warning(f"Image has zero height: {image_path}")
                 return False
             aspect_ratio = width / height
-            logger.debug(f"Image: {Path(image_path).name}, Size: {width}x{height}, Ratio: {aspect_ratio:.2f}, Threshold: {threshold}")
+            logger.debug(
+                f"Image: {Path(image_path).name}, Size: {width}x{height}, Ratio: {aspect_ratio:.2f}, Threshold: {threshold}"
+            )
             return aspect_ratio > threshold
     except FileNotFoundError:
         logger.error(f"Image file not found for aspect ratio check: {image_path}")
         return False
     except Exception as e:
-        logger.warning(f"Could not check aspect ratio for {image_path}: {e}", exc_info=True)
+        logger.warning(
+            f"Could not check aspect ratio for {image_path}: {e}", exc_info=True
+        )
         return False
 
 
 def resource_path(relative_path: str) -> str:
-    """
-    Возвращает абсолютный путь к ресурсу, работает как в обычном режиме,
+    """Возвращает абсолютный путь к ресурсу, работает как в обычном режиме,
     так и при сборке с помощью PyInstaller (_MEIPASS).
 
     Args:
@@ -88,7 +90,9 @@ def resource_path(relative_path: str) -> str:
 
 def setup_logging():
     """Настраивает базовую конфигурацию логирования."""
-    log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    log_formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     log_file = config.LOG_FILE
 
     log_dir = Path(log_file).parent
@@ -103,13 +107,13 @@ def setup_logging():
             log_file,
             maxBytes=config.LOG_MAX_BYTES,
             backupCount=config.LOG_BACKUP_COUNT,
-            encoding='utf-8'
+            encoding="utf-8",
         )
         file_handler.setFormatter(log_formatter)
         file_handler.setLevel(config.LOG_LEVEL)
 
         root_logger = logging.getLogger()
-        root_logger.setLevel(config.LOG_LEVEL) # Минимум для всех хендлеров
+        root_logger.setLevel(config.LOG_LEVEL)  # Минимум для всех хендлеров
         root_logger.addHandler(file_handler)
 
         # Опционально, себе не засоряю и вам не советую
@@ -118,7 +122,10 @@ def setup_logging():
         # console_handler.setLevel(logging.DEBUG)
         # root_logger.addHandler(console_handler)
 
-        logging.info("="*20 + f" Logging started for {config.APP_NAME} " + "="*20)
+        logging.info("=" * 20 + f" Logging started for {config.APP_NAME} " + "=" * 20)
 
     except Exception as log_e:
-        print(f"FATAL: Could not configure file logging to {log_file}: {log_e}", file=sys.stderr)
+        print(
+            f"FATAL: Could not configure file logging to {log_file}: {log_e}",
+            file=sys.stderr,
+        )

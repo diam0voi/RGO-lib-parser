@@ -1,57 +1,59 @@
 # tests/test_main.py
-import pytest
-from unittest.mock import MagicMock, call, patch # <--- Убедись, что patch импортирован
-import tkinter as tk
-import sys
-import logging
 import importlib
+import logging
 import runpy
+import sys
+import tkinter as tk
+from unittest.mock import MagicMock, patch  # <--- Убедись, что patch импортирован
+
+import pytest
+
 # Убрали traceback, т.к. отладка завершена
 # import traceback
-
 from src import config as src_config
 
-
 # --- Фикстуры ---
+
 
 @pytest.fixture(autouse=True)
 def patch_main_dependencies(monkeypatch):
     """Патчит все внешние зависимости ДО импорта main."""
     # --- Патчим ДО импорта/релоада main ---
     mock_setup = MagicMock(name="mock_setup_logging")
-    patcher_setup_logging = patch('src.utils.setup_logging', mock_setup)
+    patcher_setup_logging = patch("src.utils.setup_logging", mock_setup)
     patcher_setup_logging.start()
 
     mock_logger_instance = MagicMock(spec=logging.Logger, name="mock_logger_instance")
     mock_logger_instance.info = MagicMock(name="mock_logger_instance.info")
     mock_logger_instance.critical = MagicMock(name="mock_logger_instance.critical")
     mock_getLogger = MagicMock(return_value=mock_logger_instance, name="mock_getLogger")
-    patcher_getLogger = patch('logging.getLogger', mock_getLogger)
+    patcher_getLogger = patch("logging.getLogger", mock_getLogger)
     patcher_getLogger.start()
 
     mock_shutdown = MagicMock(name="mock_shutdown")
-    patcher_shutdown = patch('logging.shutdown', mock_shutdown)
+    patcher_shutdown = patch("logging.shutdown", mock_shutdown)
     patcher_shutdown.start()
 
     # --- Теперь импортируем/перезагружаем main ---
     main_module = None
     try:
-        modules_to_delete = [m for m in sys.modules if m.startswith('src.')]
+        modules_to_delete = [m for m in sys.modules if m.startswith("src.")]
         for mod_name in modules_to_delete:
             if mod_name in sys.modules:
                 del sys.modules[mod_name]
 
-        if 'src.config' in sys.modules:
-             importlib.reload(sys.modules['src.config'])
-        if 'src.utils' in sys.modules:
-             importlib.reload(sys.modules['src.utils'])
+        if "src.config" in sys.modules:
+            importlib.reload(sys.modules["src.config"])
+        if "src.utils" in sys.modules:
+            importlib.reload(sys.modules["src.utils"])
 
         import src.main as main_module_imported
+
         main_module = main_module_imported
         assert main_module is not None
-        assert hasattr(main_module, 'main')
+        assert hasattr(main_module, "main")
         mock_setup.assert_called_once()
-        mock_getLogger.assert_any_call('src.main')
+        mock_getLogger.assert_any_call("src.main")
     except Exception as e:
         patcher_setup_logging.stop()
         patcher_getLogger.stop()
@@ -65,7 +67,9 @@ def patch_main_dependencies(monkeypatch):
     mock_root_instance = MagicMock(spec=tk.Tk, name="mock_root_instance")
     mock_root_instance.mainloop = MagicMock(return_value=None)
     mock_root_instance.winfo_exists = MagicMock(return_value=True)
-    mock_tk_class.return_value = mock_root_instance # Устанавливаем возвращаемое значение
+    mock_tk_class.return_value = (
+        mock_root_instance  # Устанавливаем возвращаемое значение
+    )
     monkeypatch.setattr(main_module.tk, "Tk", mock_tk_class)
 
     mock_app_class = MagicMock(name="mock_App")
@@ -107,13 +111,14 @@ def patch_main_dependencies(monkeypatch):
     patcher_getLogger.stop()
     patcher_shutdown.stop()
     # Очищаем модули из кеша после теста для чистоты
-    modules_to_delete = [m for m in sys.modules if m.startswith('src.')]
+    modules_to_delete = [m for m in sys.modules if m.startswith("src.")]
     for mod_name in modules_to_delete:
         if mod_name in sys.modules:
             del sys.modules[mod_name]
 
 
 # --- Тесты ---
+
 
 def test_main_happy_path(patch_main_dependencies):
     mocks = patch_main_dependencies
@@ -123,9 +128,13 @@ def test_main_happy_path(patch_main_dependencies):
 
     main_module.main()
 
-    logger_instance.info.assert_any_call(f"Starting {src_config.APP_NAME} application...")
+    logger_instance.info.assert_any_call(
+        f"Starting {src_config.APP_NAME} application..."
+    )
     logger_instance.info.assert_any_call(f"{src_config.APP_NAME} finished gracefully.")
-    logger_instance.info.assert_any_call("="*20 + f" {src_config.APP_NAME} execution ended " + "="*20)
+    logger_instance.info.assert_any_call(
+        "=" * 20 + f" {src_config.APP_NAME} execution ended " + "=" * 20
+    )
     assert logger_instance.info.call_count == 3
 
     mocks["mock_Tk"].assert_called_once()
@@ -151,12 +160,15 @@ def test_main_exception_in_mainloop(patch_main_dependencies):
 
     main_module.main()
 
-    logger_instance.info.assert_any_call(f"Starting {src_config.APP_NAME} application...")
-    logger_instance.critical.assert_called_once_with(
-        f"Unhandled exception in main GUI loop: {test_exception}",
-        exc_info=True
+    logger_instance.info.assert_any_call(
+        f"Starting {src_config.APP_NAME} application..."
     )
-    logger_instance.info.assert_any_call("="*20 + f" {src_config.APP_NAME} execution ended " + "="*20)
+    logger_instance.critical.assert_called_once_with(
+        f"Unhandled exception in main GUI loop: {test_exception}", exc_info=True
+    )
+    logger_instance.info.assert_any_call(
+        "=" * 20 + f" {src_config.APP_NAME} execution ended " + "=" * 20
+    )
     assert logger_instance.info.call_count == 2
 
     mocks["mock_Tk"].assert_called_once()
@@ -168,7 +180,7 @@ def test_main_exception_in_mainloop(patch_main_dependencies):
     args, kwargs = mock_mb_showerror.call_args
     assert "Фатальная ошибка" in args[0]
     assert str(test_exception) in args[1]
-    assert kwargs['parent'] is mock_root_instance
+    assert kwargs["parent"] is mock_root_instance
 
     mocks["mock_shutdown"].assert_called_once()
 
@@ -188,12 +200,15 @@ def test_main_exception_in_mainloop_and_messagebox(patch_main_dependencies, caps
 
     main_module.main()
 
-    logger_instance.info.assert_any_call(f"Starting {src_config.APP_NAME} application...")
-    logger_instance.critical.assert_called_once_with(
-        f"Unhandled exception in main GUI loop: {main_exception}",
-        exc_info=True
+    logger_instance.info.assert_any_call(
+        f"Starting {src_config.APP_NAME} application..."
     )
-    logger_instance.info.assert_any_call("="*20 + f" {src_config.APP_NAME} execution ended " + "="*20)
+    logger_instance.critical.assert_called_once_with(
+        f"Unhandled exception in main GUI loop: {main_exception}", exc_info=True
+    )
+    logger_instance.info.assert_any_call(
+        "=" * 20 + f" {src_config.APP_NAME} execution ended " + "=" * 20
+    )
     assert logger_instance.info.call_count == 2
 
     mocks["mock_Tk"].assert_called_once()
@@ -226,12 +241,15 @@ def test_main_exception_tk_init_fails(patch_main_dependencies):
 
     main_module.main()
 
-    logger_instance.info.assert_any_call(f"Starting {src_config.APP_NAME} application...")
-    logger_instance.critical.assert_called_once_with(
-        f"Unhandled exception in main GUI loop: {tk_exception}",
-        exc_info=True
+    logger_instance.info.assert_any_call(
+        f"Starting {src_config.APP_NAME} application..."
     )
-    logger_instance.info.assert_any_call("="*20 + f" {src_config.APP_NAME} execution ended " + "="*20)
+    logger_instance.critical.assert_called_once_with(
+        f"Unhandled exception in main GUI loop: {tk_exception}", exc_info=True
+    )
+    logger_instance.info.assert_any_call(
+        "=" * 20 + f" {src_config.APP_NAME} execution ended " + "=" * 20
+    )
     assert logger_instance.info.call_count == 2
 
     mocks["mock_Tk"].assert_called_once()
@@ -244,7 +262,7 @@ def test_main_exception_tk_init_fails(patch_main_dependencies):
     args, kwargs = mock_mb_showerror.call_args
     assert "Фатальная ошибка" in args[0]
     assert str(tk_exception) in args[1]
-    assert kwargs['parent'] is None
+    assert kwargs["parent"] is None
 
     mocks["mock_shutdown"].assert_called_once()
 
@@ -262,12 +280,15 @@ def test_main_exception_root_does_not_exist(patch_main_dependencies):
 
     main_module.main()
 
-    logger_instance.info.assert_any_call(f"Starting {src_config.APP_NAME} application...")
-    logger_instance.critical.assert_called_once_with(
-        f"Unhandled exception in main GUI loop: {test_exception}",
-        exc_info=True
+    logger_instance.info.assert_any_call(
+        f"Starting {src_config.APP_NAME} application..."
     )
-    logger_instance.info.assert_any_call("="*20 + f" {src_config.APP_NAME} execution ended " + "="*20)
+    logger_instance.critical.assert_called_once_with(
+        f"Unhandled exception in main GUI loop: {test_exception}", exc_info=True
+    )
+    logger_instance.info.assert_any_call(
+        "=" * 20 + f" {src_config.APP_NAME} execution ended " + "=" * 20
+    )
     assert logger_instance.info.call_count == 2
 
     mocks["mock_Tk"].assert_called_once()
@@ -279,7 +300,7 @@ def test_main_exception_root_does_not_exist(patch_main_dependencies):
     args, kwargs = mock_mb_showerror.call_args
     assert "Фатальная ошибка" in args[0]
     assert str(test_exception) in args[1]
-    assert kwargs['parent'] is None
+    assert kwargs["parent"] is None
 
     mocks["mock_shutdown"].assert_called_once()
 
@@ -299,7 +320,7 @@ def test_main_entry_point(patch_main_dependencies):
     # mocks["mock_App"].reset_mock()
 
     # Удаляем модули src
-    modules_to_delete = [m for m in sys.modules if m.startswith('src.')]
+    modules_to_delete = [m for m in sys.modules if m.startswith("src.")]
     for mod_name in modules_to_delete:
         if mod_name in sys.modules:
             del sys.modules[mod_name]
@@ -311,11 +332,14 @@ def test_main_entry_point(patch_main_dependencies):
         mock_app_for_runpy = MagicMock(name="mock_app_instance_for_runpy")
 
         # Патчим _get_default_root И JournalDownloaderApp в ИСХОДНОМ модуле gui
-        with patch('tkinter._get_default_root', return_value=mock_root), \
-             patch('src.gui.JournalDownloaderApp', return_value=mock_app_for_runpy) as mock_app_class_in_runpy: # <--- ИЗМЕНЕН ПУТЬ ПАТЧА
-
+        with (
+            patch("tkinter._get_default_root", return_value=mock_root),
+            patch(
+                "src.gui.JournalDownloaderApp", return_value=mock_app_for_runpy
+            ) as mock_app_class_in_runpy,
+        ):  # <--- ИЗМЕНЕН ПУТЬ ПАТЧА
             # Запускаем runpy ВНУТРИ контекста патчей
-            runpy.run_module('src.main', run_name='__main__')
+            runpy.run_module("src.main", run_name="__main__")
 
     except Exception as e:
         pytest.fail(f"runpy.run_module failed unexpectedly: {e}")
@@ -328,16 +352,25 @@ def test_main_entry_point(patch_main_dependencies):
 
     # Проверяем, что JournalDownloaderApp (запатченный в src.gui) был вызван
     # с mock_root_instance (который вернул mock_Tk)
-    mock_app_class_in_runpy.assert_called_once_with(mocks["mock_root_instance"]) # Эта проверка должна теперь работать
+    mock_app_class_in_runpy.assert_called_once_with(
+        mocks["mock_root_instance"]
+    )  # Эта проверка должна теперь работать
 
     # Проверяем вызов mainloop у mock_root_instance
     mocks["mock_root_instance"].mainloop.assert_called_once()
 
     # Проверяем логи - теперь "finished gracefully" ДОЛЖЕН быть
-    mocks["mock_logger_instance"].info.assert_any_call(f"Starting {src_config.APP_NAME} application...")
-    mocks["mock_logger_instance"].info.assert_any_call(f"{src_config.APP_NAME} finished gracefully.")
-    mocks["mock_logger_instance"].info.assert_any_call("="*20 + f" {src_config.APP_NAME} execution ended " + "="*20)
+    mocks["mock_logger_instance"].info.assert_any_call(
+        f"Starting {src_config.APP_NAME} application..."
+    )
+    mocks["mock_logger_instance"].info.assert_any_call(
+        f"{src_config.APP_NAME} finished gracefully."
+    )
+    mocks["mock_logger_instance"].info.assert_any_call(
+        "=" * 20 + f" {src_config.APP_NAME} execution ended " + "=" * 20
+    )
     assert mocks["mock_logger_instance"].info.call_count == 3
-    mocks["mock_logger_instance"].critical.assert_not_called() # Критических ошибок быть не должно
+    mocks[
+        "mock_logger_instance"
+    ].critical.assert_not_called()  # Критических ошибок быть не должно
     mocks["mock_shutdown"].assert_called_once()
- 

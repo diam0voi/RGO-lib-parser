@@ -1,6 +1,5 @@
-import os
-from pathlib import Path
 import logging
+from pathlib import Path
 
 # --- Общее ---
 APP_NAME: str = "RGO Lib Parser"
@@ -11,7 +10,7 @@ LOG_MAX_BYTES: int = 2 * 1024 * 1024  # 2 MB
 LOG_BACKUP_COUNT: int = 2
 
 # --- GUI ---
-WINDOW_TITLE: str = f"Загрузчик + склейщик файлов библиотеки РГО. v1.4 by b0s"
+WINDOW_TITLE: str = "Загрузчик + склейщик файлов библиотеки РГО. v1.4 by b0s"
 WINDOW_ICON_PATH: str = "assets/window_bnwbook.png"
 DEFAULT_ASPECT_RATIO_THRESHOLD: float = 1.1  # Порог определения разворота (w / h)
 JPEG_QUALITY: int = 95  # Для разворотов
@@ -24,7 +23,7 @@ RETRY_ON_HTTP_CODES: list[int] = [500, 502, 503, 504]
 DEFAULT_DELAY_SECONDS: float = 0.5  # Между запросами (секунд)
 RETRY_DELAY: float = 2.0  # Перед повтором (секунд)
 REQUEST_TIMEOUT: tuple[int, int] = (10, 30)  # Для connect и read
-IMAGE_EXTENSIONS: tuple[str, ...] = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff')
+IMAGE_EXTENSIONS: tuple[str, ...] = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff")
 
 # --- Пути ---
 try:
