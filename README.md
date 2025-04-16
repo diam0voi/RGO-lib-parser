@@ -34,6 +34,7 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 
 ##
 ```
+RGO-lib-parser v1.4
 ├── .github/
 │   ├── ISSUE_TEMPLATE/ 
 │       ├── bug_report.yml
@@ -105,4 +106,8 @@ In future update, it's planned to achieve 90%+ coverage with unit testing and im
 ├── SECURITY.md
 ├── tox.ini
 └── uv.lock
+```
+
+```
+
 ```

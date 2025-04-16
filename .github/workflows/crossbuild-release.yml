@@ -1,4 +1,4 @@
-name: Build Cross-Platform Release (Current Version)
+name: Build Cross-Platform Release
 
 on:
   release:
@@ -8,106 +8,140 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    name: Build for Windows
-    runs-on: windows-latest
+  build-release:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            python-version: '3.12'
+            asset_name: RGO_lib_parser_win64.exe
+            build_command: pyinstaller --onefile --windowed --icon="assets/winapp_lilacbook.ico" --add-data "assets/window_bnwbook.png;." --name RGO_lib_parser src/main.py
+            asset_path: ./dist/RGO_lib_parser.exe
+            asset_content_type: application/vnd.microsoft.portable-executable
+          - os: macos-latest
+            python-version: '3.12'
+            asset_name: RGO_lib_parser_macOS.zip
+            build_command: pyinstaller --windowed --icon="assets/macapp_lilacbook.icns" --add-data "assets/window_bnwbook.png:." --name "RGO Lib Parser" src/main.py
+            asset_path: ./dist/RGO_lib_parser_macOS.zip
+            asset_content_type: application/zip
+            post_build_command: zip -r ./dist/RGO_lib_parser_macOS.zip ./dist/"RGO Lib Parser.app"
+          - os: ubuntu-latest
+            python-version: '3.12'
+            asset_name: RGO_lib_parser_ubuntu
+            build_command: pyinstaller --onefile --noconsole --add-data "assets/window_bnwbook.png:." --name RGO_lib_parser src/main.py
+            asset_path: ./dist/RGO_lib_parser
+            asset_content_type: application/octet-stream
+            pre_build_command: | 
+              sudo apt-get update
+              sudo apt-get install -y python3-tk
+
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
+      - name: Install uv
         run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install -r requirements.txt
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        shell: bash # Для совместимости команд
+
+      - name: Install Tkinter (Linux only)
+        if: runner.os == 'Linux' && matrix.pre_build_command
+        run: ${{ matrix.pre_build_command }}
+        shell: bash
+
+      - name: Install dependencies using uv
+        run: |
+          uv pip install .
+          uv pip install pyinstaller
+        shell: bash
 
       - name: Build with PyInstaller
-        run: pyinstaller --onefile --windowed --icon="assets/winapp_lilacbook.ico" --add-data "assets/window_bnwbook.png;." --name RGO_lib_parser src/main.py
+        run: ${{ matrix.build_command }}
+        shell: bash
 
-      - name: Upload Release Asset (Windows)
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./dist/RGO_lib_parser.exe
-          asset_name: RGO_lib_parser_win64.exe
-          asset_content_type: application/vnd.microsoft.portable-executable
+      - name: Create Zip Archive (macOS only)
+        if: runner.os == 'macOS' && matrix.post_build_command
+        run: ${{ matrix.post_build_command }}
+        shell: bash
 
-  build-macos:
-    name: Build for macOS
-    runs-on: macos-latest
-
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Install dependencies
+      - name: Generate SHA512 Checksum
+        id: checksum
         run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install -r requirements.txt
+          cd dist
+          FILENAME=$(basename "${{ matrix.asset_path }}")
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            certutil -hashfile "$FILENAME" SHA512 | findstr /v "hashfile CertUtil" > "${FILENAME}.sha512"
+            CHECKSUM_VALUE=$(type "${FILENAME}.sha512")
+          else
+            shasum -a 512 "$FILENAME" > "${FILENAME}.sha512"
+            CHECKSUM_VALUE=$(cat "${FILENAME}.sha512")
+          fi
+          echo "checksum_line=${CHECKSUM_VALUE}" >> $GITHUB_OUTPUT
+          echo "checksum_file=${FILENAME}.sha512" >> $GITHUB_OUTPUT
+          cd ..
+        shell: bash
 
-      - name: Build with PyInstaller
-        run: pyinstaller --windowed --icon="assets/macapp_lilacbook.icns" --add-data "assets/window_bnwbook.png:." --name "RGO Lib Parser" src/main.py
-
-      - name: Create Zip Archive of .app
-        run: zip -r ./dist/RGO_lib_parser_macOS.zip ./dist/"RGO Lib Parser.app"
-
-      - name: Upload Release Asset (macOS)
-        uses: actions/upload-release-asset@v1
+      - name: Upload Release Asset (${{ matrix.asset_name }})
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./dist/RGO_lib_parser_macOS.zip
-          asset_name: RGO_lib_parser_macOS.zip
-          asset_content_type: application/zip
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} ${{ matrix.asset_path }} --clobber
+        shell: bash
 
-  build-linux:
-    name: Build for Linux (Ubuntu)
+      - name: Upload Checksum File (${{ matrix.asset_name }}.sha512)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} ./dist/${{ steps.checksum.outputs.checksum_file }} --clobber
+        shell: bash
+
+      - name: Store checksum line for aggregation
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksum-line-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/checksum_line.txt
+        run: echo "${{ steps.checksum.outputs.checksum_line }}" > ${{ runner.temp }}/checksum_line.txt
+        shell: bash
+
+
+  aggregate-checksums:
+    name: Aggregate Checksums
+    needs: build-release
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Download all checksum lines
+        uses: actions/download-artifact@v4
         with:
-          python-version: '3.13'
+          pattern: checksum-line-*
+          path: checksum-lines
+          merge-multiple: true
 
-      - name: Install Tkinter (Linux)
+      - name: Create aggregated checksums.txt file
+        id: aggregate
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-tk
+          cat checksum-lines/*.txt > checksums.txt
+          echo "Checksums for release ${{ github.event.release.tag_name }}:" >> aggregated_checksums.txt
+          echo "" >> aggregated_checksums.txt
+          cat checksums.txt >> aggregated_checksums.txt
+          echo "checksum_path=aggregated_checksums.txt" >> $GITHUB_OUTPUT
+        shell: bash
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install -r requirements.txt
-
-      - name: Build with PyInstaller
-        run: pyinstaller --onefile --noconsole --add-data "assets/window_bnwbook.png:." --name RGO_lib_parser src/main.py
-
-      - name: Upload Release Asset (Linux)
-        uses: actions/upload-release-asset@v1
+      - name: Upload aggregated checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./dist/RGO_lib_parser
-          asset_name: RGO_lib_parser_ubuntu
-          asset_content_type: application/octet-stream
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} ${{ steps.aggregate.outputs.checksum_path }} --clobber
+        shell: bash
