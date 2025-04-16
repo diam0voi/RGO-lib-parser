@@ -29,12 +29,12 @@ def test_config_paths_success(mock_home, mock_mkdir):
 
     # Проверяем, что пути установлены относительно fake_home_path
     expected_app_data_dir = fake_home_path / f".{src.config.APP_NAME}_data"
-    assert str(
-        expected_app_data_dir / "downloaded_pages"
-    ) == src.config.DEFAULT_PAGES_DIR
-    assert str(
-        expected_app_data_dir / "final_spreads"
-    ) == src.config.DEFAULT_SPREADS_DIR
+    assert (
+        str(expected_app_data_dir / "downloaded_pages") == src.config.DEFAULT_PAGES_DIR
+    )
+    assert (
+        str(expected_app_data_dir / "final_spreads") == src.config.DEFAULT_SPREADS_DIR
+    )
 
     # Убедимся, что другие константы не пропали
     assert hasattr(src.config, "DEFAULT_USER_AGENT")

@@ -13,7 +13,7 @@ from . import (
     config,
     logic,
     ui_builder,  # Импортируем модуль целиком
-    )
+)
 from .app_state import AppState
 from .settings_manager import SettingsManager
 from .task_manager import TaskManager
