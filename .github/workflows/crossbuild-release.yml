@@ -106,14 +106,18 @@ jobs:
           gh release upload ${{ github.event.release.tag_name }} ./dist/${{ steps.checksum.outputs.checksum_file }} --clobber
         shell: bash
 
+      - name: Create temporary checksum file
+        id: create_checksum_file # Даем ID этому шагу
+        run: echo "${{ steps.checksum.outputs.checksum_line }}" > ${{ runner.temp }}/checksum_line.txt
+        shell: bash
+
+      # Шаг 2: Загружаем созданный файл как артефакт
       - name: Store checksum line for aggregation
         uses: actions/upload-artifact@v4
         with:
           name: checksum-line-${{ matrix.os }}
-          path: |
-            ${{ runner.temp }}/checksum_line.txt
-        run: echo "${{ steps.checksum.outputs.checksum_line }}" > ${{ runner.temp }}/checksum_line.txt
-        shell: bash
+          # Путь к файлу, созданному в предыдущем шаге
+          path: ${{ runner.temp }}/checksum_line.txt
 
 
   aggregate-checksums:
