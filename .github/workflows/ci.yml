@@ -62,8 +62,8 @@ jobs:
 
     - name: Install coverage dependencies using uv
       run: |
-        uv pip install -e ".[dev]"
-        uv pip install coveralls
+        uv pip install --system -e ".[dev]"
+        uv pip install --system coveralls
 
     # После проверки убрать повторный запуск тестов так:
     # 1. В job 'test-and-lint' ++ шаг для загрузки артефакта 'coverage.xml':

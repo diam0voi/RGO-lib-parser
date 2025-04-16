@@ -60,8 +60,8 @@ jobs:
 
       - name: Install dependencies using uv
         run: |
-          uv pip install .
-          uv pip install pyinstaller
+          uv pip install --system .
+          uv pip install --system pyinstaller
         shell: bash
 
       - name: Build with PyInstaller
