@@ -401,8 +401,8 @@ FodyWeavers.xsd
 
 
 # vitruals
-venv/
-.venv/
+venv*/
+.venv*/
 env/
 ENV/
 

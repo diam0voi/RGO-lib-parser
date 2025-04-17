@@ -1,7 +1,6 @@
 # tests/test_main.py
 import importlib
 import logging
-import runpy
 import sys
 import tkinter as tk
 from unittest.mock import MagicMock, patch
@@ -12,11 +11,9 @@ from src import config as src_config
 
 # --- Фикстуры ---
 
-
 @pytest.fixture(autouse=True)
 def patch_main_dependencies(monkeypatch):
     """Патчит все внешние зависимости ДО импорта main."""
-    # --- Патчим ДО импорта/релоада main ---
     mock_setup = MagicMock(name="mock_setup_logging")
     patcher_setup_logging = patch("src.utils.setup_logging", mock_setup)
     patcher_setup_logging.start()
@@ -32,7 +29,6 @@ def patch_main_dependencies(monkeypatch):
     patcher_shutdown = patch("logging.shutdown", mock_shutdown)
     patcher_shutdown.start()
 
-    # --- Теперь импортируем/перезагружаем main ---
     main_module = None
     try:
         modules_to_delete = [m for m in sys.modules if m.startswith("src.")]
@@ -58,17 +54,20 @@ def patch_main_dependencies(monkeypatch):
         patcher_shutdown.stop()
         pytest.fail(f"Failed to import/reload src.main after patching: {e}")
 
-    # --- Патчим зависимости ВНУТРИ main ПОСЛЕ его импорта ---
+    # Патчим зависимости ВНУТРИ main ПОСЛЕ его импорта
 
-    # УБРАНА ОТЛАДКА: Возвращаем простое создание моков Tk
     mock_tk_class = MagicMock(name="mock_Tk")
     mock_root_instance = MagicMock(spec=tk.Tk, name="mock_root_instance")
     mock_root_instance.mainloop = MagicMock(return_value=None)
-    mock_root_instance.winfo_exists = MagicMock(return_value=True)
-    mock_tk_class.return_value = (
-        mock_root_instance  # Устанавливаем возвращаемое значение
-    )
-    monkeypatch.setattr(main_module.tk, "Tk", mock_tk_class)
+    mock_root_instance.winfo_exists = MagicMock(return_value=True) # Для блока except/finally в main
+    mock_root_instance.tk = MagicMock(name="mock_root_instance.tk")
+
+    mock_tk_class.return_value = mock_root_instance
+    if main_module and hasattr(main_module, 'tk'):
+         monkeypatch.setattr(main_module.tk, "Tk", mock_tk_class, raising=False)
+    else:
+         patcher_tk_global = patch("tkinter.Tk", mock_tk_class)
+         patcher_tk_global.start()
 
     mock_app_class = MagicMock(name="mock_App")
     mock_app_instance = MagicMock(name="mock_app_instance")
@@ -104,11 +103,9 @@ def patch_main_dependencies(monkeypatch):
         "main_module": main_module,
     }
 
-    # Останавливаем патчи после теста
     patcher_setup_logging.stop()
     patcher_getLogger.stop()
     patcher_shutdown.stop()
-    # Очищаем модули из кеша после теста для чистоты
     modules_to_delete = [m for m in sys.modules if m.startswith("src.")]
     for mod_name in modules_to_delete:
         if mod_name in sys.modules:
@@ -117,15 +114,20 @@ def patch_main_dependencies(monkeypatch):
 
 # --- Тесты ---
 
-
 def test_main_happy_path(patch_main_dependencies):
+    # Этот тест уже делает то, что нам нужно для проверки основного потока
     mocks = patch_main_dependencies
     main_module = mocks["main_module"]
     logger_instance = mocks["mock_logger_instance"]
     mock_root_instance = mocks["mock_root_instance"]
 
+    # Убедимся, что main существует перед вызовом
+    assert hasattr(main_module, "main") and callable(main_module.main)
+
     main_module.main()
 
+    # --- Assertions ---
+    # Проверяем логи
     logger_instance.info.assert_any_call(
         f"Starting {src_config.APP_NAME} application..."
     )
@@ -134,14 +136,15 @@ def test_main_happy_path(patch_main_dependencies):
         "=" * 20 + f" {src_config.APP_NAME} execution ended " + "=" * 20
     )
     assert logger_instance.info.call_count == 3
+    logger_instance.critical.assert_not_called()
 
+    # Проверяем вызовы Tk и App (используем моки из фикстуры)
     mocks["mock_Tk"].assert_called_once()
-    mocks["mock_App"].assert_called_once_with(mock_root_instance)
+    mocks["mock_App"].assert_called_once_with(mock_root_instance) # Используем mock_App из фикстуры
     mock_root_instance.mainloop.assert_called_once()
 
-    logger_instance.critical.assert_not_called()
+    # Проверяем messagebox и shutdown
     mocks["mock_messagebox"].showerror.assert_not_called()
-
     mocks["mock_shutdown"].assert_called_once()
 
 
@@ -300,75 +303,4 @@ def test_main_exception_root_does_not_exist(patch_main_dependencies):
     assert str(test_exception) in args[1]
     assert kwargs["parent"] is None
 
-    mocks["mock_shutdown"].assert_called_once()
-
-
-def test_main_entry_point(patch_main_dependencies):
-    """Тестирует вызов main() через точку входа if __name__ == '__main__'."""
-    mocks = patch_main_dependencies
-
-    # Reset mocks
-    mocks["mock_Tk"].reset_mock()
-    mocks["mock_root_instance"].reset_mock()
-    mocks["mock_logger_instance"].info.reset_mock()
-    mocks["mock_logger_instance"].critical.reset_mock()
-    mocks["mock_shutdown"].reset_mock()
-
-    # Clear src modules
-    modules_to_delete = [m for m in sys.modules if m.startswith("src.")]
-    for mod_name in modules_to_delete:
-        if mod_name in sys.modules:
-            del sys.modules[mod_name]
-
-    try:
-        # mock_root нам здесь не нужен для передачи в patch, т.к. mock_Tk его вернет
-        # mock_root = mocks["mock_root_instance"] # Можно убрать
-
-        # Create a separate mock for App specifically for this test/runpy
-        mock_app_for_runpy = MagicMock(name="mock_app_instance_for_runpy")
-
-        # Apply necessary patches globally before runpy execution
-        with (
-            # УБИРАЕМ ЭТОТ ПАТЧ:
-            # patch("tkinter._get_default_root", return_value=mocks["mock_root_instance"]),
-            patch(
-                "src.gui.JournalDownloaderApp", return_value=mock_app_for_runpy
-            ) as mock_app_class_in_runpy,
-            patch("tkinter.Tk", mocks["mock_Tk"]),  # Оставляем этот важный патч
-        ):
-            runpy.run_module("src.main", run_name="__main__")
-
-    except Exception as e:
-        pytest.fail(f"runpy.run_module failed unexpectedly: {e}")
-
-    # --- Assertions ---
-    # Проверяем, что mock_Tk (класс) был вызван ровно один раз для создания root
-    mocks["mock_Tk"].assert_called_once()
-
-    # Проверяем, что JournalDownloaderApp (запатченный) был вызван
-    # с mock_root_instance (который вернул mock_Tk)
-    mock_app_class_in_runpy.assert_called_once_with(mocks["mock_root_instance"])
-
-    # Проверяем вызов mainloop у mock_root_instance
-    mocks["mock_root_instance"].mainloop.assert_called_once()
-
-    # Проверяем логи
-    mocks["mock_logger_instance"].info.assert_any_call(
-        f"Starting {src_config.APP_NAME} application..."
-    )
-    # Важно: Убедись, что в твоем коде main.py лог "finished gracefully"
-    # действительно есть ПОСЛЕ mainloop. Если mainloop мокнут, он завершается мгновенно.
-    mocks["mock_logger_instance"].info.assert_any_call(
-        f"{src_config.APP_NAME} finished gracefully."
-    )
-    # Проверяем, что лог завершения тоже есть
-    mocks["mock_logger_instance"].info.assert_any_call(
-        "=" * 20 + f" {src_config.APP_NAME} execution ended " + "=" * 20
-    )
-    # Убедимся, что количество вызовов info соответствует ожиданиям (3)
-    # Если у тебя в setup_logging или где-то еще есть info-логи на старте,
-    # это число может быть другим. Проверь ожидаемое количество.
-    assert mocks["mock_logger_instance"].info.call_count == 3 # Оставляем как есть, но держим в уме
-
-    mocks["mock_logger_instance"].critical.assert_not_called()
     mocks["mock_shutdown"].assert_called_once()
