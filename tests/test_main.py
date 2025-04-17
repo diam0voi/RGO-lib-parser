@@ -372,4 +372,3 @@ def test_main_entry_point(patch_main_dependencies):
 
     mocks["mock_logger_instance"].critical.assert_not_called()
     mocks["mock_shutdown"].assert_called_once()
-    
