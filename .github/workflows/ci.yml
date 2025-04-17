@@ -67,102 +67,102 @@ jobs:
         retention-days: 1 # Храним артефакт недолго
 
   upload-coverage:
-  needs: test-and-lint
-  runs-on: ubuntu-latest
-  if: success() # Убедись, что все jobs в матрице действительно успешны!
+    needs: test-and-lint
+    runs-on: ubuntu-latest
+    if: success() # Убедись, что все jobs в матрице действительно успешны!
 
-  steps:
-    - name: Check out code
-      uses: actions/checkout@v4
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-    - name: Install uv
-      run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-    - name: Install coverage dependencies using uv
-      run: |
-        uv pip install --system -e ".[dev]"
+      - name: Install coverage dependencies using uv
+        run: |
+          uv pip install --system -e ".[dev]"
 
-    - name: List files BEFORE download attempt
-      run: |
-        echo "--- Listing current directory BEFORE download ---"
-        ls -la
-        echo "-------------------------------------------------"
+      - name: List files BEFORE download attempt
+        run: |
+          echo "--- Listing current directory BEFORE download ---"
+          ls -la
+          echo "-------------------------------------------------"
 
-    - name: Download all coverage data artifacts
-      uses: actions/download-artifact@v4
-      with:
-        # Ищем артефакты по паттерну
-        pattern: coverage-data-*
-        # Скачиваем в папку coverage-artifacts
-        path: coverage-artifacts
-        # ВАЖНО: Проверь логи этого шага! Он должен написать, нашел ли он артефакты и скачал ли их.
+      - name: Download all coverage data artifacts
+        uses: actions/download-artifact@v4
+        with:
+          # Ищем артефакты по паттерну
+          pattern: coverage-data-*
+          # Скачиваем в папку coverage-artifacts
+          path: coverage-artifacts
+          # ВАЖНО: Проверь логи этого шага! Он должен написать, нашел ли он артефакты и скачал ли их.
 
-    - name: List files AFTER download attempt
-      run: |
-        echo "--- Listing current directory AFTER download ---"
-        ls -la
-        echo "--- Checking for coverage-artifacts directory ---"
-        # Проверяем, существует ли директория ВООБЩЕ
-        ls -ld coverage-artifacts || echo "!!! Directory coverage-artifacts NOT FOUND !!!"
-        echo "--- Listing contents of coverage-artifacts (if it exists) ---"
-        # Пытаемся посмотреть содержимое, если папка есть
-        ls -R coverage-artifacts || echo "!!! Cannot list coverage-artifacts contents !!!"
-        echo "--------------------------------------------------------"
+      - name: List files AFTER download attempt
+        run: |
+          echo "--- Listing current directory AFTER download ---"
+          ls -la
+          echo "--- Checking for coverage-artifacts directory ---"
+          # Проверяем, существует ли директория ВООБЩЕ
+          ls -ld coverage-artifacts || echo "!!! Directory coverage-artifacts NOT FOUND !!!"
+          echo "--- Listing contents of coverage-artifacts (if it exists) ---"
+          # Пытаемся посмотреть содержимое, если папка есть
+          ls -R coverage-artifacts || echo "!!! Cannot list coverage-artifacts contents !!!"
+          echo "--------------------------------------------------------"
 
-    # --- Шаги ниже будут выполняться, только если предыдущие не упали ---
+      # --- Шаги ниже будут выполняться, только если предыдущие не упали ---
 
-    - name: Combine coverage data
-      run: |
-        echo "Attempting to combine coverage data..."
-        # Проверяем еще раз ПЕРЕД combine, что папка и файлы есть
-        if [ ! -d "coverage-artifacts" ]; then
-           echo "::error::Directory coverage-artifacts still not found before combine!"
-           exit 1
-        fi
-        if [ -z "$(ls -A coverage-artifacts)" ]; then
-           echo "::error::Directory coverage-artifacts exists but is EMPTY before combine!"
-           # Возможно, артефакты скачались, но были пустыми? Или download action создал пустую папку?
-           exit 1
-        fi
-        echo "Directory coverage-artifacts found and is not empty. Combining..."
-        # Используем путь, который теперь ДОЛЖЕН существовать
-        coverage combine coverage-artifacts/coverage-data-*/*
-        echo "Combine command finished. Checking for .coverage file..."
-        ls -la .coverage
-        if [ ! -s .coverage ]; then
-          echo "::error::Combined .coverage file is empty or does not exist after combine!"
-          echo "--- Coverage Debug Data ---"
-          coverage debug data # Поможет понять, какие файлы он видел
-          echo "---------------------------"
-          exit 1
-        fi
-        echo "Coverage data combined successfully."
+      - name: Combine coverage data
+        run: |
+          echo "Attempting to combine coverage data..."
+          # Проверяем еще раз ПЕРЕД combine, что папка и файлы есть
+          if [ ! -d "coverage-artifacts" ]; then
+             echo "::error::Directory coverage-artifacts still not found before combine!"
+             exit 1
+          fi
+          if [ -z "$(ls -A coverage-artifacts)" ]; then
+             echo "::error::Directory coverage-artifacts exists but is EMPTY before combine!"
+             # Возможно, артефакты скачались, но были пустыми? Или download action создал пустую папку?
+             exit 1
+          fi
+          echo "Directory coverage-artifacts found and is not empty. Combining..."
+          # Используем путь, который теперь ДОЛЖЕН существовать
+          coverage combine coverage-artifacts/coverage-data-*/*
+          echo "Combine command finished. Checking for .coverage file..."
+          ls -la .coverage
+          if [ ! -s .coverage ]; then
+            echo "::error::Combined .coverage file is empty or does not exist after combine!"
+            echo "--- Coverage Debug Data ---"
+            coverage debug data # Поможет понять, какие файлы он видел
+            echo "---------------------------"
+            exit 1
+          fi
+          echo "Coverage data combined successfully."
 
-    - name: Generate and check coverage report
-      run: |
-        coverage report --fail-under=99 # Установи свой порог
-        coverage xml -o coverage.xml
+      - name: Generate and check coverage report
+        run: |
+          coverage report --fail-under=99 # Установи свой порог
+          coverage xml -o coverage.xml
 
-    - name: Upload coverage report to Coveralls
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-        COVERALLS_SERVICE_NAME: github
-      run: |
-        # uv pip install coveralls # Если нужно
-        coveralls --service=github
+      - name: Upload coverage report to Coveralls
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+          COVERALLS_SERVICE_NAME: github
+        run: |
+          # uv pip install coveralls # Если нужно
+          coveralls --service=github
 
-    - name: Upload results to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: ./coverage.xml
-        fail_ci_if_error: true
-        verbose: true
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: true
+          verbose: true
