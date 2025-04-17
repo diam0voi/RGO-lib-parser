@@ -30,7 +30,7 @@ This is my first project of SUCH a level, so don't be surprised by 2-line commit
 
 
 ## Ideas for future
-In future update, it's planned to achieve 90%+ coverage with unit testing and implement some simple features with changed organization of the repo.
+Add auto-recognition of blank (non-useful) spreads, CLI interface, and integration tests!
 
 ##
 ```
@@ -109,5 +109,42 @@ RGO-lib-parser v1.4
 ```
 
 ```
-
+RGO-lib-parser v1.4
+├── pillow v11.2.1
+├── requests v2.32.3
+│   ├── certifi v2025.1.31
+│   ├── charset-normalizer v3.4.1
+│   ├── idna v3.10
+│   └── urllib3 v2.4.0
+├── coverage[toml] v6.5.0 (extra: dev)
+├── coveralls v3.3.1 (extra: dev)
+│   ├── coverage v6.5.0
+│   ├── docopt v0.6.2
+│   └── requests v2.32.3 (*)
+├── lxml v5.3.2 (extra: dev)
+├── mypy v1.15.0 (extra: dev)
+│   ├── mypy-extensions v1.0.0
+│   └── typing-extensions v4.13.2
+├── pre-commit v3.8.0 (extra: dev)
+│   ├── cfgv v3.4.0
+│   ├── identify v2.6.9
+│   ├── nodeenv v1.9.1
+│   ├── pyyaml v6.0.2
+│   └── virtualenv v20.30.0
+│       ├── distlib v0.3.9
+│       ├── filelock v3.18.0
+│       └── platformdirs v4.3.7
+├── pytest v8.3.5 (extra: dev)
+│   ├── colorama v0.4.6
+│   ├── iniconfig v2.1.0
+│   ├── packaging v24.2
+│   └── pluggy v1.5.0
+├── pytest-cov v5.0.0 (extra: dev)
+│   ├── coverage[toml] v6.5.0
+│   └── pytest v8.3.5 (*)
+├── ruff v0.11.5 (extra: dev)
+├── types-pillow v10.2.0.20240822 (extra: dev)
+└── types-requests v2.32.0.20250328 (extra: dev)
+    └── urllib3 v2.4.0
+(*) Package tree already displayed
 ```

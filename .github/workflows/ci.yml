@@ -1,4 +1,4 @@
-name: Python CI & Linting
+name: Python CI, Linting & Coverage
 
 on:
   push:
@@ -11,8 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        # Запускаем тесты на всех поддерживаемых версиях
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
-      fail-fast: false
+      fail-fast: false # Не отменять другие jobs, если один упал
 
     steps:
     - name: Check out code
@@ -26,10 +27,11 @@ jobs:
     - name: Install uv
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH 
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Install dependencies using uv
       run: |
+        # Устанавливаем все зависимости, включая dev (тесты, coverage, ruff и т.д.)
         uv pip install --system -e ".[dev]"
 
     - name: Lint with Ruff
@@ -38,19 +40,40 @@ jobs:
         ruff check src tests --force-exclude
         ruff format --check src tests
 
-    - name: Run tests with coverage
+    - name: Run tests and collect coverage data (parallel mode)
       run: |
-        pytest --cov=src --cov-report=xml --cov-report=term-missing --cov-fail-under=50 tests/
+        # Запускаем pytest через coverage в параллельном режиме
+        # --source=src указывает, где искать исходный код для отчета
+        # -m pytest передает управление pytest
+        coverage run --parallel-mode --source=src -m pytest tests/
+
+    - name: Rename coverage file per Python version
+      run: |
+        # Переименовываем файл данных, чтобы они не перезаписались при объединении
+        mv .coverage .coverage.${{ matrix.python-version }}
+
+    - name: Upload coverage data artifact
+      uses: actions/upload-artifact@v4
+      with:
+        # Имя артефакта, содержащего все файлы .coverage.*
+        name: coverage-data-${{ matrix.python-version }} # Уникальное имя для каждого job'а
+        path: .coverage.${{ matrix.python-version }}
+        retention-days: 1 # Храним артефакт недолго
 
   upload-coverage:
+    # Этот job зависит от успешного завершения ВСЕХ jobs в матрице test-and-lint
     needs: test-and-lint
     runs-on: ubuntu-latest
+    # Запускаем только если предыдущие шаги (тесты и линтинг) прошли успешно
     if: success()
+
     steps:
     - name: Check out code
+      # Код нужен для coverage, чтобы найти исходники при генерации отчета
       uses: actions/checkout@v4
 
     - name: Set up Python
+      # Используем одну версию Python для обработки отчетов (например, последнюю стабильную)
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -62,48 +85,45 @@ jobs:
 
     - name: Install coverage dependencies using uv
       run: |
+        # Устанавливаем зависимости, нужные для combine и загрузки отчетов
         uv pip install --system -e ".[dev]"
-        uv pip install --system coveralls
 
-    # После проверки убрать повторный запуск тестов так:
-    # 1. В job 'test-and-lint' ++ шаг для загрузки артефакта 'coverage.xml':
-    #    - name: Upload coverage artifact
-    #      uses: actions/upload-artifact@v4
-    #      with:
-    #        name: coverage-xml
-    #        path: coverage.xml
-    # 2. В job 'upload-coverage' -- шаг "Run tests with coverage"
-    # 3. ++ шаг для скачивания артефакта:
-    #    - name: Download coverage artifact
-    #      uses: actions/download-artifact@v4
-    #      with:
-    #        name: coverage-xml
-    # 4. Только 'coveralls' и 'codecov' в шаге установки зависимостей.
+    - name: Download all coverage data artifacts
+      uses: actions/download-artifact@v4
+      with:
+        # Скачиваем все артефакты, начинающиеся с 'coverage-data-'
+        pattern: coverage-data-*
+        path: . # Скачиваем в корень рабочего каталога
+        # download-artifact v4 автоматически обрабатывает несколько артефактов по паттерну
 
-    - name: Run tests and generate coverage report
+    - name: Combine coverage data
       run: |
-        pytest --cov=src --cov-report=xml tests/
+        echo "Combining coverage data..."
+        # coverage combine найдет все файлы .coverage* в текущей директории
+        coverage combine
+        echo "Coverage data combined into .coverage file."
+
+    - name: Generate and check coverage report
+      run: |
+        # Генерируем отчет в терминал и проверяем минимальный порог покрытия
+        # Установи свой желаемый порог вместо 99
+        coverage report --fail-under=99
+        # Генерируем XML отчет для Codecov и Coveralls
+        coverage xml -o coverage.xml
 
     - name: Upload coverage report to Coveralls
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-        COVERALLS_PARALLEL: true
+        # PARALLEL: false (по умолчанию) и не нужен --finish, т.к. загружаем один объединенный отчет
         COVERALLS_SERVICE_NAME: github
       run: |
-        coveralls
-
-    - name: Finalize Coveralls build (only needed for parallel runs)
-      if: always() && env.COVERALLS_PARALLEL == 'true'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-      run: |
-        coveralls --finish
+        coveralls # Загружаем объединенный отчет
 
     - name: Upload results to Codecov
-      uses: codecov/codecov-action@v4 # Обновлено до v4
+      uses: codecov/codecov-action@v4
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        files: ./coverage.xml
-        # fail_ci_if_error: true  после проверки надо завершать CI с ошибкой, если загрузка в Codecov не удалась
+        files: ./coverage.xml # Указываем путь к объединенному отчету
+        fail_ci_if_error: true # Рекомендуется включить после отладки
+        verbose: true # Включить для отладки, если будут проблемы с загрузкой
