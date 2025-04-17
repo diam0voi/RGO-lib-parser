@@ -111,16 +111,20 @@ jobs:
     - name: Combine coverage data
       run: |
         echo "Combining coverage data from downloaded artifacts..."
-        # Указываем coverage combine искать данные в поддиректориях coverage-data-*/
-        coverage combine coverage-data-*/
+        # Запускаем combine без аргументов. Она сама найдет .coverage.* файлы
+        # в текущей директории и поддиректориях (включая coverage-data-*/.coverage.*)
+        coverage combine
         echo "Coverage data combined into .coverage file."
         # Проверяем, что файл .coverage создался и не пустой
         ls -la .coverage
         if [ ! -s .coverage ]; then
           echo "Error: Combined .coverage file is empty or does not exist!"
+          # Можно добавить вывод списка файлов для дополнительной отладки, если проблема останется
+          echo "Files found by combine:"
+          coverage debug data
           exit 1
         fi
-
+    
     - name: Generate and check coverage report
       run: |
         # Генерируем отчет в терминал и проверяем минимальный порог покрытия
