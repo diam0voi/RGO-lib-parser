@@ -110,21 +110,34 @@ jobs:
 
     - name: Combine coverage data
       run: |
+        echo "Listing downloaded files structure:"
+        ls -R coverage-data-*/ # Убедимся, что файлы на месте и имеют правильные имена
+
         echo "Combining coverage data from downloaded artifacts..."
-        # Запускаем combine без аргументов. Она сама найдет .coverage.* файлы
-        # в текущей директории и поддиректориях (включая coverage-data-*/.coverage.*)
-        coverage combine
+        # Явно указываем combine искать файлы .coverage.* ВНУТРИ папок coverage-data-*
+        # Используем globbing: coverage-data-* находит папки, /.* находит файлы внутри них
+        # Важно: Убедись, что внутри папок ТОЛЬКО нужные .coverage.* файлы.
+        # Если там могут быть другие файлы, лучше использовать более точный паттерн:
+        # coverage combine coverage-data-*/.coverage.*
+        # Но coverage combine обычно умный и сам ищет нужные файлы по стандартному имени.
+        # Попробуем сначала более общий вариант:
+        coverage combine coverage-data-*/*
+
+        # Если предыдущая команда не сработала, попробуй более точный паттерн:
+        # if [ ! -f .coverage ]; then
+        #   echo "Trying combine with specific file pattern..."
+        #   coverage combine coverage-data-*/.coverage.*
+        # fi
+
         echo "Coverage data combined into .coverage file."
-        # Проверяем, что файл .coverage создался и не пустой
         ls -la .coverage
         if [ ! -s .coverage ]; then
-          echo "Error: Combined .coverage file is empty or does not exist!"
-          # Можно добавить вывод списка файлов для дополнительной отладки, если проблема останется
-          echo "Files found by combine:"
-          coverage debug data
+          echo "Error: Combined .coverage file is empty or does not exist after combine!"
+          echo "Files found by combine's debug command:"
+          coverage debug data # Показывает, какие файлы данных он видит
           exit 1
         fi
-    
+        
     - name: Generate and check coverage report
       run: |
         # Генерируем отчет в терминал и проверяем минимальный порог покрытия
