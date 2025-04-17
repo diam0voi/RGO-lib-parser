@@ -134,7 +134,7 @@ def test_set_from_dict_empty(app_state: AppState):
     ],
 )
 def test_get_total_pages_int(
-    app_state: AppState, pages_input: str, expected_output: int | None
+    app_state: AppState, pages_input: str, expected_output: Optional[int]
 ):
     """Тест получения количества страниц как int."""
     app_state.total_pages.set(pages_input)

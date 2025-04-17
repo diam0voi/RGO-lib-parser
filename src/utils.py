@@ -28,7 +28,7 @@ def get_page_number(filename: str) -> int:
     return int(match.group()) if match else -1
 
 
-def is_likely_spread(image_path: str | Path, threshold: Optional[float] = None) -> bool:
+def is_likely_spread(image_path: Union[str, Path], threshold: Optional[float] = None) -> bool:
     """Проверяет, может ли изображение уже быть разворотом,
     основываясь на соотношении сторон (ширина / высота).
 
