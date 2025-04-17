@@ -69,7 +69,7 @@ jobs:
   upload-coverage:
     needs: test-and-lint
     runs-on: ubuntu-latest
-    if: success() # Убедись, что все jobs в матрице действительно успешны!
+    if: success()
 
     steps:
       - name: Check out code
@@ -98,48 +98,51 @@ jobs:
       - name: Download all coverage data artifacts
         uses: actions/download-artifact@v4
         with:
-          # Ищем артефакты по паттерну
           pattern: coverage-data-*
-          # Скачиваем в папку coverage-artifacts
+          # Скачиваем В папку coverage-artifacts.
+          # Похоже, файлы .coverage.X.Y окажутся ПРЯМО ЗДЕСЬ.
           path: coverage-artifacts
-          # ВАЖНО: Проверь логи этого шага! Он должен написать, нашел ли он артефакты и скачал ли их.
 
       - name: List files AFTER download attempt
         run: |
           echo "--- Listing current directory AFTER download ---"
           ls -la
           echo "--- Checking for coverage-artifacts directory ---"
-          # Проверяем, существует ли директория ВООБЩЕ
           ls -ld coverage-artifacts || echo "!!! Directory coverage-artifacts NOT FOUND !!!"
-          echo "--- Listing contents of coverage-artifacts (if it exists) ---"
-          # Пытаемся посмотреть содержимое, если папка есть
-          ls -R coverage-artifacts || echo "!!! Cannot list coverage-artifacts contents !!!"
+          echo "--- Listing contents of coverage-artifacts ---"
+          # Ожидаем увидеть .coverage.3.9, .coverage.3.10 и т.д. здесь
+          ls -la coverage-artifacts || echo "!!! Cannot list coverage-artifacts contents !!!"
           echo "--------------------------------------------------------"
-
-      # --- Шаги ниже будут выполняться, только если предыдущие не упали ---
 
       - name: Combine coverage data
         run: |
           echo "Attempting to combine coverage data..."
-          # Проверяем еще раз ПЕРЕД combine, что папка и файлы есть
+          # Проверяем, что папка coverage-artifacts существует
           if [ ! -d "coverage-artifacts" ]; then
-             echo "::error::Directory coverage-artifacts still not found before combine!"
+             echo "::error::Directory coverage-artifacts not found before combine!"
              exit 1
           fi
+          # Проверяем, что она не пустая
           if [ -z "$(ls -A coverage-artifacts)" ]; then
              echo "::error::Directory coverage-artifacts exists but is EMPTY before combine!"
-             # Возможно, артефакты скачались, но были пустыми? Или download action создал пустую папку?
              exit 1
           fi
-          echo "Directory coverage-artifacts found and is not empty. Combining..."
-          # Используем путь, который теперь ДОЛЖЕН существовать
-          coverage combine coverage-artifacts/coverage-data-*/*
+
+          echo "Directory coverage-artifacts found and contains files. Combining..."
+          # ТЕПЕРЬ ГЛАВНОЕ ИЗМЕНЕНИЕ:
+          # Указываем coverage combine искать файлы .coverage.*
+          # НЕПОСРЕДСТВЕННО внутри папки coverage-artifacts
+          # coverage combine coverage-artifacts # Можно так, coverage найдет файлы
+          # Или более явно:
+          coverage combine coverage-artifacts/.coverage.*
+
           echo "Combine command finished. Checking for .coverage file..."
+          # Файл .coverage создается в текущей директории (корне)
           ls -la .coverage
           if [ ! -s .coverage ]; then
             echo "::error::Combined .coverage file is empty or does not exist after combine!"
             echo "--- Coverage Debug Data ---"
-            coverage debug data # Поможет понять, какие файлы он видел
+            coverage debug data
             echo "---------------------------"
             exit 1
           fi
