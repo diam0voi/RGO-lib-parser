@@ -1,8 +1,8 @@
 import errno
 import logging
 from pathlib import Path
-from unittest.mock import patch
 from typing import Optional
+from unittest.mock import patch
 
 import pytest
 
