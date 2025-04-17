@@ -321,17 +321,20 @@ def test_main_entry_point(patch_main_dependencies):
             del sys.modules[mod_name]
 
     try:
-        mock_root = mocks["mock_root_instance"]
+        # mock_root нам здесь не нужен для передачи в patch, т.к. mock_Tk его вернет
+        # mock_root = mocks["mock_root_instance"] # Можно убрать
+
         # Create a separate mock for App specifically for this test/runpy
         mock_app_for_runpy = MagicMock(name="mock_app_instance_for_runpy")
 
-        # Apply all patches globally before runpy execution
+        # Apply necessary patches globally before runpy execution
         with (
-            patch("tkinter._get_default_root", return_value=mock_root),
+            # УБИРАЕМ ЭТОТ ПАТЧ:
+            # patch("tkinter._get_default_root", return_value=mocks["mock_root_instance"]),
             patch(
                 "src.gui.JournalDownloaderApp", return_value=mock_app_for_runpy
             ) as mock_app_class_in_runpy,
-            patch("tkinter.Tk", mocks["mock_Tk"]),  # Ensure Tk is globally patched
+            patch("tkinter.Tk", mocks["mock_Tk"]),  # Оставляем этот важный патч
         ):
             runpy.run_module("src.main", run_name="__main__")
 
@@ -339,16 +342,33 @@ def test_main_entry_point(patch_main_dependencies):
         pytest.fail(f"runpy.run_module failed unexpectedly: {e}")
 
     # --- Assertions ---
+    # Проверяем, что mock_Tk (класс) был вызван ровно один раз для создания root
     mocks["mock_Tk"].assert_called_once()
+
+    # Проверяем, что JournalDownloaderApp (запатченный) был вызван
+    # с mock_root_instance (который вернул mock_Tk)
     mock_app_class_in_runpy.assert_called_once_with(mocks["mock_root_instance"])
+
+    # Проверяем вызов mainloop у mock_root_instance
     mocks["mock_root_instance"].mainloop.assert_called_once()
 
+    # Проверяем логи
     mocks["mock_logger_instance"].info.assert_any_call(
         f"Starting {src_config.APP_NAME} application..."
     )
+    # Важно: Убедись, что в твоем коде main.py лог "finished gracefully"
+    # действительно есть ПОСЛЕ mainloop. Если mainloop мокнут, он завершается мгновенно.
     mocks["mock_logger_instance"].info.assert_any_call(
         f"{src_config.APP_NAME} finished gracefully."
     )
-    assert mocks["mock_logger_instance"].info.call_count == 3
+    # Проверяем, что лог завершения тоже есть
+    mocks["mock_logger_instance"].info.assert_any_call(
+        "=" * 20 + f" {src_config.APP_NAME} execution ended " + "=" * 20
+    )
+    # Убедимся, что количество вызовов info соответствует ожиданиям (3)
+    # Если у тебя в setup_logging или где-то еще есть info-логи на старте,
+    # это число может быть другим. Проверь ожидаемое количество.
+    assert mocks["mock_logger_instance"].info.call_count == 3 # Оставляем как есть, но держим в уме
+
     mocks["mock_logger_instance"].critical.assert_not_called()
     mocks["mock_shutdown"].assert_called_once()
