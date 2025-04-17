@@ -49,14 +49,21 @@ jobs:
     - name: Rename coverage file per Python version
       run: |
         # Переименовываем файл данных, чтобы они не перезаписались при объединении
-        mv .coverage .coverage.${{ matrix.python-version }}
+        # Хотя с download-artifact v4 это не строго обязательно, т.к. они в разных папках окажутся,
+        # но это хорошая практика для ясности. coverage combine все равно найдет их.
+        # coverage run --parallel создает файлы вида .coverage.<hostname>.<pid>.<random>
+        # Найдем этот файл и переименуем
+        COVERAGE_FILE=$(ls .coverage.*)
+        mv "$COVERAGE_FILE" ".coverage.${{ matrix.python-version }}"
+        echo "Renamed $COVERAGE_FILE to .coverage.${{ matrix.python-version }}"
+
 
     - name: Upload coverage data artifact
       uses: actions/upload-artifact@v4
       with:
-        # Имя артефакта, содержащего все файлы .coverage.*
+        # Имя артефакта, содержащего файл .coverage.<version>
         name: coverage-data-${{ matrix.python-version }} # Уникальное имя для каждого job'а
-        path: .coverage.${{ matrix.python-version }}
+        path: .coverage.${{ matrix.python-version }} # Загружаем только переименованный файл
         retention-days: 1 # Храним артефакт недолго
 
   upload-coverage:
@@ -64,7 +71,7 @@ jobs:
     needs: test-and-lint
     runs-on: ubuntu-latest
     # Запускаем только если предыдущие шаги (тесты и линтинг) прошли успешно
-    if: success()
+    if: success() # Можно заменить на always(), если нужно загружать отчет даже при падении тестов, но это редкость
 
     steps:
     - name: Check out code
@@ -85,6 +92,7 @@ jobs:
     - name: Install coverage dependencies using uv
       run: |
         # Устанавливаем зависимости, нужные для combine и загрузки отчетов
+        # Убедись, что coverage установлен
         uv pip install --system -e ".[dev]"
 
     - name: Download all coverage data artifacts
@@ -92,15 +100,26 @@ jobs:
       with:
         # Скачиваем все артефакты, начинающиеся с 'coverage-data-'
         pattern: coverage-data-*
-        path: . # Скачиваем в корень рабочего каталога
+        path: . # Скачиваем в корень, download-artifact создаст подпапки!
         # download-artifact v4 автоматически обрабатывает несколько артефактов по паттерну
+
+    - name: List downloaded files # Добавлено для отладки
+      run: |
+        echo "Listing files after download:"
+        ls -R
 
     - name: Combine coverage data
       run: |
-        echo "Combining coverage data..."
-        # coverage combine найдет все файлы .coverage* в текущей директории
-        coverage combine
+        echo "Combining coverage data from downloaded artifacts..."
+        # Указываем coverage combine искать данные в поддиректориях coverage-data-*/
+        coverage combine coverage-data-*/
         echo "Coverage data combined into .coverage file."
+        # Проверяем, что файл .coverage создался и не пустой
+        ls -la .coverage
+        if [ ! -s .coverage ]; then
+          echo "Error: Combined .coverage file is empty or does not exist!"
+          exit 1
+        fi
 
     - name: Generate and check coverage report
       run: |
@@ -114,10 +133,12 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+        COVERALLS_SERVICE_NAME: github # Явно указываем сервис
         # PARALLEL: false (по умолчанию) и не нужен --finish, т.к. загружаем один объединенный отчет
-        COVERALLS_SERVICE_NAME: github
       run: |
-        coveralls # Загружаем объединенный отчет
+        # Устанавливаем coveralls если его нет в [dev] зависимостях явно
+        # uv pip install coveralls
+        coveralls --service=github # Передаем сервис явно для надежности
 
     - name: Upload results to Codecov
       uses: codecov/codecov-action@v4
