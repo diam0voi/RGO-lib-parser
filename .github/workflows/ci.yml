@@ -11,9 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Запускаем тесты на всех поддерживаемых версиях
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
-      fail-fast: false # Не отменять другие jobs, если один упал
+      fail-fast: false
 
     steps:
     - name: Check out code
@@ -31,55 +30,47 @@ jobs:
 
     - name: Install dependencies using uv
       run: |
-        # Устанавливаем все зависимости, включая dev (тесты, coverage, ruff и т.д.)
         uv pip install --system -e ".[dev]"
 
     - name: Lint with Ruff
       run: |
-        echo "Running Ruff..."
         ruff check src tests --force-exclude
 
     - name: Run tests and collect coverage data (parallel mode)
       run: |
-        # Запускаем pytest через coverage в параллельном режиме
-        # --source=src указывает, где искать исходный код для отчета
-        # -m pytest передает управление pytest
         coverage run --parallel-mode --source=src -m pytest tests/
 
-    - name: Rename coverage file per Python version
+    - name: Find and Rename coverage file per Python version
       run: |
-        # Переименовываем файл данных, чтобы они не перезаписались при объединении
-        # Хотя с download-artifact v4 это не строго обязательно, т.к. они в разных папках окажутся,
-        # но это хорошая практика для ясности. coverage combine все равно найдет их.
         # coverage run --parallel создает файлы вида .coverage.<hostname>.<pid>.<random>
-        # Найдем этот файл и переименуем
+        # Найдем этот файл (должен быть только один в корне)
         COVERAGE_FILE=$(ls .coverage.*)
-        mv "$COVERAGE_FILE" ".coverage.${{ matrix.python-version }}"
-        echo "Renamed $COVERAGE_FILE to .coverage.${{ matrix.python-version }}"
-
+        if [ -z "$COVERAGE_FILE" ]; then
+          echo "Error: No .coverage.* file found after running tests!"
+          exit 1
+        fi
+        # Переименовываем в предсказуемое имя
+        NEW_NAME=".coverage.${{ matrix.python-version }}"
+        mv "$COVERAGE_FILE" "$NEW_NAME"
+        echo "Renamed $COVERAGE_FILE to $NEW_NAME"
 
     - name: Upload coverage data artifact
       uses: actions/upload-artifact@v4
       with:
-        # Имя артефакта, содержащего файл .coverage.<version>
-        name: coverage-data-${{ matrix.python-version }} # Уникальное имя для каждого job'а
-        path: .coverage.${{ matrix.python-version }} # Загружаем только переименованный файл
-        retention-days: 1 # Храним артефакт недолго
+        name: coverage-data-${{ matrix.python-version }}
+        path: .coverage.${{ matrix.python-version }} # Загружаем переименованный файл
+        retention-days: 1
 
   upload-coverage:
-    # Этот job зависит от успешного завершения ВСЕХ jobs в матрице test-and-lint
     needs: test-and-lint
     runs-on: ubuntu-latest
-    # Запускаем только если предыдущие шаги (тесты и линтинг) прошли успешно
-    if: success() # Можно заменить на always(), если нужно загружать отчет даже при падении тестов, но это редкость
+    if: success() # Или always() если нужно загружать отчет даже при падении тестов
 
     steps:
     - name: Check out code
-      # Код нужен для coverage, чтобы найти исходники при генерации отчета
       uses: actions/checkout@v4
 
     - name: Set up Python
-      # Используем одну версию Python для обработки отчетов (например, последнюю стабильную)
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -91,59 +82,76 @@ jobs:
 
     - name: Install coverage dependencies using uv
       run: |
-        # Устанавливаем зависимости, нужные для combine и загрузки отчетов
-        # Убедись, что coverage установлен
-        uv pip install --system -e ".[dev]"
+        uv pip install --system -e ".[dev]" # Убедимся, что coverage установлен
 
     - name: Download all coverage data artifacts
       uses: actions/download-artifact@v4
       with:
-        # Скачиваем все артефакты, начинающиеся с 'coverage-data-'
         pattern: coverage-data-*
-        path: . # Скачиваем в корень, download-artifact создаст подпапки!
-        # download-artifact v4 автоматически обрабатывает несколько артефактов по паттерну
+        path: . # Скачиваем в корень рабочего каталога
 
-    - name: List downloaded files # Добавлено для отладки
+    - name: List downloaded files (Detailed Debug)
       run: |
-        echo "Listing files after download:"
-        ls -R
+        echo "--- Listing current directory (ls -la .) ---"
+        ls -la .
+        echo "--- Listing directories matching pattern (find . -maxdepth 1 -type d -name 'coverage-data-*') ---"
+        find . -maxdepth 1 -type d -name 'coverage-data-*' -ls || echo "No directories matching 'coverage-data-*' found."
+        echo "--- Recursively searching for ALL .coverage* files (find . -name '.coverage*') ---"
+        find . -name '.coverage*' -ls || echo "No files matching '.coverage*' found recursively."
+        echo "--- End of file listing ---"
 
-    - name: Combine coverage data
+    - name: Combine coverage data (Attempt 1: Default search)
+      id: combine_default
+      continue-on-error: true # Продолжаем, даже если этот шаг упадет
       run: |
-        echo "Combining coverage data from downloaded artifacts..."
-        # Указываем coverage combine искать данные в поддиректориях coverage-data-*/
-        coverage combine coverage-data-*/
-        echo "Coverage data combined into .coverage file."
-        # Проверяем, что файл .coverage создался и не пустой
-        ls -la .coverage
-        if [ ! -s .coverage ]; then
-          echo "Error: Combined .coverage file is empty or does not exist!"
-          exit 1
+        echo "Attempting 'coverage combine' (searches current dir by default)..."
+        coverage combine --keep # --keep чтобы не удалять исходные файлы при ошибке
+        echo "Default combine finished with exit code $?"
+
+    - name: Combine coverage data (Attempt 2: Explicit find)
+      # Запускаем, только если предыдущая попытка не удалась (exit code != 0)
+      if: steps.combine_default.outcome == 'failure'
+      run: |
+        echo "Default combine failed. Attempting 'coverage combine' with explicit file list from find..."
+        # Находим все файлы .coverage* рекурсивно и передаем их как аргументы
+        # Используем find ... -exec для обработки пробелов/спецсимволов, если они вдруг будут
+        find . -name '.coverage.*' -exec coverage combine --keep --append {} +
+        # Проверяем результат combine
+        if [ ! -f .coverage ]; then
+           echo "Combine failed: .coverage file not created."
+           exit 1
         fi
+        echo "Combine with explicit files successful."
+        ls -la .coverage
 
     - name: Generate and check coverage report
       run: |
-        # Генерируем отчет в терминал и проверяем минимальный порог покрытия
-        # Установи свой желаемый порог вместо 99
+        echo "Generating coverage report..."
+        # Убедимся, что файл .coverage существует перед генерацией отчета
+        if [ ! -f .coverage ]; then
+           echo "Error: Cannot generate report, combined .coverage file not found!"
+           # Выводим содержимое директории для диагностики
+           echo "--- Current directory contents ---"
+           ls -la .
+           echo "--- Recursive file list ---"
+           find . -type f -ls
+           exit 1
+        fi
         coverage report --fail-under=99
-        # Генерируем XML отчет для Codecov и Coveralls
         coverage xml -o coverage.xml
 
     - name: Upload coverage report to Coveralls
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-        COVERALLS_SERVICE_NAME: github # Явно указываем сервис
-        # PARALLEL: false (по умолчанию) и не нужен --finish, т.к. загружаем один объединенный отчет
+        COVERALLS_SERVICE_NAME: github
       run: |
-        # Устанавливаем coveralls если его нет в [dev] зависимостях явно
-        # uv pip install coveralls
-        coveralls --service=github # Передаем сервис явно для надежности
+        coveralls --service=github
 
     - name: Upload results to Codecov
       uses: codecov/codecov-action@v4
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        files: ./coverage.xml # Указываем путь к объединенному отчету
-        fail_ci_if_error: true # Рекомендуется включить после отладки
-        verbose: true # Включить для отладки, если будут проблемы с загрузкой
+        files: ./coverage.xml
+        fail_ci_if_error: true
+        verbose: true
