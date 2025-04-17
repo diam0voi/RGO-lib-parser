@@ -47,15 +47,46 @@ jobs:
         coverage run --parallel-mode --source=src -m pytest tests/
 
     - name: Rename coverage file per Python version
-      run: |
-        # Переименовываем файл данных, чтобы они не перезаписались при объединении
-        # Хотя с download-artifact v4 это не строго обязательно, т.к. они в разных папках окажутся,
-        # но это хорошая практика для ясности. coverage combine все равно найдет их.
-        # coverage run --parallel создает файлы вида .coverage.<hostname>.<pid>.<random>
-        # Найдем этот файл и переименуем
-        COVERAGE_FILE=$(ls .coverage.*)
-        mv "$COVERAGE_FILE" ".coverage.${{ matrix.python-version }}"
-        echo "Renamed $COVERAGE_FILE to .coverage.${{ matrix.python-version }}"
+        id: rename_coverage # Добавим ID для ясности
+        run: |
+          echo "Looking for coverage data file (.coverage.*)..."
+          # Используем find для надежного поиска ОДНОГО файла .coverage.* в текущей директории
+          # -maxdepth 1: не искать в подпапках
+          # -name '.coverage.*': паттерн имени
+          # -not -name '.coverage': исключить сам файл .coverage (если он вдруг есть)
+          # -print -quit: найти первый и выйти (более эффективно)
+          COVERAGE_FILE=$(find . -maxdepth 1 -type f -name '.coverage.*' -not -name '.coverage' -print -quit)
+
+          # Проверяем, найден ли файл
+          if [ -z "$COVERAGE_FILE" ]; then
+            echo "::error::No .coverage.* data file found after running tests!"
+            echo "Listing current directory contents:"
+            ls -la .* # Показываем все файлы, включая скрытые
+            exit 1
+          fi
+
+          # На всякий случай проверим, нет ли других .coverage.* файлов
+          OTHER_FILES=$(find . -maxdepth 1 -type f -name '.coverage.*' -not -name '.coverage' -not -path "$COVERAGE_FILE" -print)
+          if [ -n "$OTHER_FILES" ]; then
+             echo "::warning::Found more than one .coverage.* file. This is unexpected. Using the first one found: $COVERAGE_FILE"
+             echo "Other files found:"
+             echo "$OTHER_FILES"
+          fi
+
+          TARGET_FILE=".coverage.${{ matrix.python-version }}"
+          echo "Found unique coverage file: $COVERAGE_FILE"
+          echo "Attempting to rename '$COVERAGE_FILE' to '$TARGET_FILE'"
+          # Используем кавычки на случай странных символов в имени файла (хотя маловероятно)
+          mv "$COVERAGE_FILE" "$TARGET_FILE"
+
+          # Проверяем, что переименование удалось и файл существует
+          if [ ! -f "$TARGET_FILE" ]; then
+            echo "::error::Failed to rename or find the target file '$TARGET_FILE' after move!"
+            echo "Listing current directory contents again:"
+            ls -la .*
+            exit 1
+          fi
+          echo "Successfully renamed coverage file to $TARGET_FILE"
 
 
     - name: Upload coverage data artifact
