@@ -3,7 +3,7 @@ import logging.handlers
 from pathlib import Path
 import re
 import sys
-from typing import Optional
+from typing import Optional, Union
 
 from PIL import Image
 

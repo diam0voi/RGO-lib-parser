@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 import threading
 from unittest.mock import MagicMock
+from typing import Optional
 
 import pytest
 import requests
