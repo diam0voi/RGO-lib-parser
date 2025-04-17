@@ -2,8 +2,8 @@
 import logging
 from pathlib import Path
 import threading
-from unittest.mock import MagicMock
 from typing import Optional
+from unittest.mock import MagicMock
 
 import pytest
 import requests
