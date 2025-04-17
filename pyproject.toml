@@ -169,12 +169,10 @@ omit = [
     "src/types.py",  # Нечего покрывать
 ]
 
-
 [tool.coverage.report]
 fail_under = 50
 show_missing = true
 skip_covered = true
-
 
 [tool.coverage.html]
 directory = "reports/coverage_rep"
