@@ -31,7 +31,6 @@ jobs:
 
     - name: Install dependencies using uv
       run: |
-        # Устанавливаем все зависимости, включая dev (тесты, coverage, ruff и т.д.)
         uv pip install --system -e ".[dev]"
 
     - name: Lint with Ruff
@@ -41,61 +40,75 @@ jobs:
 
     - name: Run tests and collect coverage data (parallel mode)
       run: |
+        # Убедимся, что директория tests существует перед запуском
+        if [ ! -d "tests" ]; then
+          echo "::error::Directory 'tests' not found!"
+          exit 1
+        fi
         # Запускаем pytest через coverage в параллельном режиме
-        # --source=src указывает, где искать исходный код для отчета
-        # -m pytest передает управление pytest
         coverage run --parallel-mode --source=src -m pytest tests/
+        # Проверим код возврата pytest/coverage
+        if [ $? -ne 0 ]; then
+          echo "::error::Coverage/Pytest step failed!"
+          exit 1
+        fi
+        echo "Coverage run finished."
+        echo "Listing files after coverage run:"
+        ls -la .* .
 
     - name: Rename coverage file per Python version
-      id: rename_coverage # Добавим ID для ясности
+      id: rename_coverage
       run: |
         echo "Looking for coverage data file (.coverage.*)..."
-        # Используем find для надежного поиска ОДНОГО файла .coverage.* в текущей директории
-        # -maxdepth 1: не искать в подпапках
-        # -name '.coverage.*': паттерн имени
-        # -not -name '.coverage': исключить сам файл .coverage (если он вдруг есть)
-        # -print -quit: найти первый и выйти (более эффективно)
+        # Используем find для надежного поиска ОДНОГО файла .coverage.*
         COVERAGE_FILE=$(find . -maxdepth 1 -type f -name '.coverage.*' -not -name '.coverage' -print -quit)
 
-        # Проверяем, найден ли файл
         if [ -z "$COVERAGE_FILE" ]; then
           echo "::error::No .coverage.* data file found after running tests!"
-          echo "Listing current directory contents:"
-          ls -la .* # Показываем все файлы, включая скрытые
+          ls -la .*
           exit 1
         fi
 
-        # На всякий случай проверим, нет ли других .coverage.* файлов
+        # Проверка на >1 файл (предупреждение)
         OTHER_FILES=$(find . -maxdepth 1 -type f -name '.coverage.*' -not -name '.coverage' -not -path "$COVERAGE_FILE" -print)
         if [ -n "$OTHER_FILES" ]; then
-           echo "::warning::Found more than one .coverage.* file. This is unexpected. Using the first one found: $COVERAGE_FILE"
-           echo "Other files found:"
-           echo "$OTHER_FILES"
+           echo "::warning::Found more than one .coverage.* file. Using the first one found: $COVERAGE_FILE"
+           echo "Other files found:\n$OTHER_FILES"
         fi
 
         TARGET_FILE=".coverage.${{ matrix.python-version }}"
         echo "Found unique coverage file: $COVERAGE_FILE"
         echo "Attempting to rename '$COVERAGE_FILE' to '$TARGET_FILE'"
-        # Используем кавычки на случай странных символов в имени файла (хотя маловероятно)
         mv "$COVERAGE_FILE" "$TARGET_FILE"
 
-        # Проверяем, что переименование удалось и файл существует
         if [ ! -f "$TARGET_FILE" ]; then
           echo "::error::Failed to rename or find the target file '$TARGET_FILE' after move!"
-          echo "Listing current directory contents again:"
           ls -la .*
           exit 1
         fi
         echo "Successfully renamed coverage file to $TARGET_FILE"
 
+        # --- ЖЕЛЕЗОБЕТОННАЯ ПРОВЕРКА ПЕРЕД ЗАГРУЗКОЙ ---
+        echo "Verifying existence and size of $TARGET_FILE before upload..."
+        ls -la "$TARGET_FILE" # Показываем детали файла
+        if [ ! -s "$TARGET_FILE" ]; then
+          echo "::error::File '$TARGET_FILE' exists but is EMPTY! Cannot upload."
+          # Возможно, тесты прошли, но покрытие не собралось?
+          exit 1
+        fi
+        echo "File '$TARGET_FILE' exists and is not empty. Proceeding to upload."
+        # --- КОНЕЦ ПРОВЕРКИ ---
+
     - name: Upload coverage data artifact
+      id: upload_artifact_step # ID для легкого поиска логов этого шага
       uses: actions/upload-artifact@v4
       with:
-        # Имя артефакта, содержащего файл .coverage.<version>
-        name: coverage-data-${{ matrix.python-version }} # Уникальное имя для каждого job'а
-        path: .coverage.${{ matrix.python-version }} # Загружаем только переименованный файл
-        retention-days: 1 # Храним артефакт недолго
-
+        name: coverage-data-${{ matrix.python-version }} # Уникальное имя
+        path: .coverage.${{ matrix.python-version }} # Файл, который ТОЧНО существует и не пуст
+        retention-days: 1
+        # Явно указываем падать, если файл не найден (хотя проверка выше должна это предотвратить)
+        if-no-files-found: error
+        
   upload-coverage:
     needs: test-and-lint
     runs-on: ubuntu-latest
