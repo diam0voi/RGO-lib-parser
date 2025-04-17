@@ -67,19 +67,15 @@ jobs:
         retention-days: 1 # Храним артефакт недолго
 
   upload-coverage:
-    # Этот job зависит от успешного завершения ВСЕХ jobs в матрице test-and-lint
-    needs: test-and-lint
-    runs-on: ubuntu-latest
-    # Запускаем только если предыдущие шаги (тесты и линтинг) прошли успешно
-    if: success() # Можно заменить на always(), если нужно загружать отчет даже при падении тестов, но это редкость
+  needs: test-and-lint
+  runs-on: ubuntu-latest
+  if: success() # Убедись, что все jobs в матрице действительно успешны!
 
-    steps:
+  steps:
     - name: Check out code
-      # Код нужен для coverage, чтобы найти исходники при генерации отчета
       uses: actions/checkout@v4
 
     - name: Set up Python
-      # Используем одну версию Python для обработки отчетов (например, последнюю стабильную)
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -91,73 +87,82 @@ jobs:
 
     - name: Install coverage dependencies using uv
       run: |
-        # Устанавливаем зависимости, нужные для combine и загрузки отчетов
-        # Убедись, что coverage установлен
         uv pip install --system -e ".[dev]"
 
-    
+    - name: List files BEFORE download attempt
+      run: |
+        echo "--- Listing current directory BEFORE download ---"
+        ls -la
+        echo "-------------------------------------------------"
+
     - name: Download all coverage data artifacts
       uses: actions/download-artifact@v4
       with:
-        # Скачиваем все артефакты, начинающиеся с 'coverage-data-'
+        # Ищем артефакты по паттерну
         pattern: coverage-data-*
-        # Скачиваем в ОТДЕЛЬНУЮ папку, чтобы избежать конфликтов
+        # Скачиваем в папку coverage-artifacts
         path: coverage-artifacts
-        # download-artifact v4 создаст подпапки ВНУТРИ coverage-artifacts:
-        # coverage-artifacts/coverage-data-3.9/
-        # coverage-artifacts/coverage-data-3.10/
-        # ...
+        # ВАЖНО: Проверь логи этого шага! Он должен написать, нашел ли он артефакты и скачал ли их.
 
-    - name: List downloaded files # Теперь ищем внутри coverage-artifacts
+    - name: List files AFTER download attempt
       run: |
-        echo "Listing files after download inside coverage-artifacts/:"
-        ls -R coverage-artifacts # Показываем всю структуру скачанного
+        echo "--- Listing current directory AFTER download ---"
+        ls -la
+        echo "--- Checking for coverage-artifacts directory ---"
+        # Проверяем, существует ли директория ВООБЩЕ
+        ls -ld coverage-artifacts || echo "!!! Directory coverage-artifacts NOT FOUND !!!"
+        echo "--- Listing contents of coverage-artifacts (if it exists) ---"
+        # Пытаемся посмотреть содержимое, если папка есть
+        ls -R coverage-artifacts || echo "!!! Cannot list coverage-artifacts contents !!!"
+        echo "--------------------------------------------------------"
+
+    # --- Шаги ниже будут выполняться, только если предыдущие не упали ---
 
     - name: Combine coverage data
       run: |
-        echo "Combining coverage data from downloaded artifacts..."
-        # Указываем coverage combine искать данные ВНУТРИ coverage-artifacts/coverage-data-*/
-        # coverage combine достаточно умен, чтобы найти .coverage.* файлы там
-        # Первый аргумент указывает директории, где искать данные
+        echo "Attempting to combine coverage data..."
+        # Проверяем еще раз ПЕРЕД combine, что папка и файлы есть
+        if [ ! -d "coverage-artifacts" ]; then
+           echo "::error::Directory coverage-artifacts still not found before combine!"
+           exit 1
+        fi
+        if [ -z "$(ls -A coverage-artifacts)" ]; then
+           echo "::error::Directory coverage-artifacts exists but is EMPTY before combine!"
+           # Возможно, артефакты скачались, но были пустыми? Или download action создал пустую папку?
+           exit 1
+        fi
+        echo "Directory coverage-artifacts found and is not empty. Combining..."
+        # Используем путь, который теперь ДОЛЖЕН существовать
         coverage combine coverage-artifacts/coverage-data-*/*
-
-        # Альтернативный, более явный путь к файлам данных:
-        # coverage combine coverage-artifacts/coverage-data-*/.coverage.*
-
-        echo "Coverage data combined into .coverage file (in the root)."
-        # Файл .coverage по умолчанию создается в текущей директории (корень воркспейса)
+        echo "Combine command finished. Checking for .coverage file..."
         ls -la .coverage
         if [ ! -s .coverage ]; then
-          echo "Error: Combined .coverage file is empty or does not exist!"
-          echo "Files found by combine's debug command:"
-          coverage debug data # Эта команда покажет, какие файлы данных он нашел
+          echo "::error::Combined .coverage file is empty or does not exist after combine!"
+          echo "--- Coverage Debug Data ---"
+          coverage debug data # Поможет понять, какие файлы он видел
+          echo "---------------------------"
           exit 1
         fi
-    
-            
+        echo "Coverage data combined successfully."
+
     - name: Generate and check coverage report
       run: |
-        # Генерируем отчет в терминал и проверяем минимальный порог покрытия
-        # Установи свой желаемый порог вместо 99
-        coverage report --fail-under=99
-        # Генерируем XML отчет для Codecov и Coveralls
+        coverage report --fail-under=99 # Установи свой порог
         coverage xml -o coverage.xml
 
     - name: Upload coverage report to Coveralls
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-        COVERALLS_SERVICE_NAME: github # Явно указываем сервис
-        # PARALLEL: false (по умолчанию) и не нужен --finish, т.к. загружаем один объединенный отчет
+        COVERALLS_SERVICE_NAME: github
       run: |
-        # Устанавливаем coveralls если его нет в [dev] зависимостях явно
-        # uv pip install coveralls
-        coveralls --service=github # Передаем сервис явно для надежности
+        # uv pip install coveralls # Если нужно
+        coveralls --service=github
 
     - name: Upload results to Codecov
       uses: codecov/codecov-action@v4
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        files: ./coverage.xml # Указываем путь к объединенному отчету
-        fail_ci_if_error: true # Рекомендуется включить после отладки
-        verbose: true # Включить для отладки, если будут проблемы с загрузкой
+        files: ./coverage.xml
+        fail_ci_if_error: true
+        verbose: true
