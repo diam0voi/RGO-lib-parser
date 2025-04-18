@@ -1,0 +1,12 @@
+* text=auto eol=lf
+
+*.py text
+
+*.yaml text
+*.yml text
+*.ini text
+*.md text
+*.txt text
+*.ini text
+
+*.lock -diff
