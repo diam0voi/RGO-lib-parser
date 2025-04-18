@@ -5,11 +5,17 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '30 1 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
   checks: write
   pull-requests: write
+  security-events: write
+  id-token: write
+  actions: read
 
 jobs:
   test:
@@ -20,7 +26,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
-        include: # Добавляем lint и typing только для Python 3.13
+        include:
           - python-version: '3.9'
             tox-env: py39
           - python-version: '3.10'
@@ -34,10 +40,11 @@ jobs:
           - python-version: '3.13'
             tox-env: typing
 
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
@@ -52,8 +59,6 @@ jobs:
     - name: Run tox environment (${{ matrix.tox-env }})
       run: tox -e ${{ matrix.tox-env }}
       env:
-        # Переменные окружения, если нужны для тестов
-        # MY_API_KEY: ${{ secrets.MY_API_KEY_FOR_TESTS }}
         PYTHON_VERSION: ${{ matrix.python-version }}
 
     - name: Upload coverage to Codecov
@@ -61,22 +66,20 @@ jobs:
       uses: codecov/codecov-action@v4
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        files: ./coverage.xml # Путь указан в tox.ini
+        files: ./coverage.xml
         flags: python${{ matrix.python-version }}
         name: codecov-${{ matrix.os }}-py${{ matrix.python-version }}
         fail_ci_if_error: true
-      continue-on-error: true # Не ронять CI, если токен недоступен (например, в PR от форков)
+      continue-on-error: true
 
     - name: Upload coverage to Coveralls
       if: startsWith(matrix.tox-env, 'py')
       uses: coverallsapp/github-action@v2
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        # repo_token: ${{ secrets.COVERALLS_REPO_TOKEN }}
         path-to-lcov: ./coverage.lcov
         flag-name: run-${{ matrix.python-version }}
         parallel: true
-
 
   coveralls-finish:
     name: Mark Coveralls build as finished
@@ -89,4 +92,33 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         repo_token: ${{ secrets.COVERALLS_REPO_TOKEN }}
         parallel-finished: true
-        # Если автодетекция не сработает  # build-number: ${{ github.run_id }}
+
+  scorecard:
+    name: OpenSSF Scorecard Analysis
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run OpenSSF Scorecard
+        uses: ossf/scorecard-action@v2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload SARIF results file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          wait-for-processing: true
