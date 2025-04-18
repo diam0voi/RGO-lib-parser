@@ -51,7 +51,7 @@ jobs:
     - name: Install uv and tox
       run: |
         python -m pip install --upgrade pip uv
-        uv pip install tox tox-uv # Устанавливаем только tox и плагин
+        pip install tox tox-uv
 
     - name: Run tox environment (${{ matrix.tox-env }})
       run: tox -e ${{ matrix.tox-env }}
