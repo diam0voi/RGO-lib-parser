@@ -1,4 +1,5 @@
-name: Python CI, Linting & Coverage
+# .github/workflows/ci.yml
+name: CI Pipeline
 
 on:
   push:
@@ -6,17 +7,40 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read # Необходимо для checkout
+  # Для Coveralls v2+ с GITHUB_TOKEN:
+  checks: write   # Для отправки статуса
+  pull-requests: write # Для комментариев в PR (опционально)
+
 jobs:
-  test-and-lint:
-    runs-on: ubuntu-latest
+  test:
+    name: ${{ matrix.tox-env }} on Python ${{ matrix.python-version }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        # Запускаем тесты на всех поддерживаемых версиях
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
-      fail-fast: false # Не отменять другие jobs, если один упал
+        os: [ubuntu-latest] # Можно добавить [windows-latest, macos-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+        include: # Добавляем lint и typing только для Python 3.13
+          - python-version: '3.13'
+            tox-env: lint
+          - python-version: '3.13'
+            tox-env: typing
+          # Добавляем тестовые окружения для каждой версии Python
+          - python-version: '3.9'
+            tox-env: py39
+          - python-version: '3.10'
+            tox-env: py310
+          - python-version: '3.11'
+            tox-env: py311
+          - python-version: '3.12'
+            tox-env: py312
+          - python-version: '3.13'
+            tox-env: py313
 
     steps:
-    - name: Check out code
+    - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
@@ -24,191 +48,56 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install uv
+    - name: Install uv and tox
       run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        python -m pip install --upgrade pip uv
+        uv pip install tox tox-uv # Устанавливаем только tox и плагин
 
-    - name: Install dependencies using uv
-      run: |
-        uv pip install --system -e ".[dev]"
+    - name: Run tox environment (${{ matrix.tox-env }})
+      run: tox -e ${{ matrix.tox-env }}
+      env:
+        # Переменные окружения, если нужны для тестов
+        # MY_API_KEY: ${{ secrets.MY_API_KEY_FOR_TESTS }}
+        PYTHON_VERSION: ${{ matrix.python-version }}
 
-    - name: Lint with Ruff
-      run: |
-        echo "Running Ruff..."
-        ruff check src tests --force-exclude
-
-    - name: Run tests and collect coverage data (parallel mode)
-      run: |
-        # Убедимся, что директория tests существует перед запуском
-        if [ ! -d "tests" ]; then
-          echo "::error::Directory 'tests' not found!"
-          exit 1
-        fi
-        # Запускаем pytest через coverage в параллельном режиме
-        coverage run --parallel-mode --source=src -m pytest tests/
-        # Проверим код возврата pytest/coverage
-        if [ $? -ne 0 ]; then
-          echo "::error::Coverage/Pytest step failed!"
-          exit 1
-        fi
-        echo "Coverage run finished."
-        echo "Listing files after coverage run:"
-        ls -la .* .
-
-    - name: Rename coverage file per Python version
-      id: rename_coverage
-      run: |
-        echo "Looking for coverage data file (.coverage.*)..."
-        # Используем find для надежного поиска ОДНОГО файла .coverage.*
-        COVERAGE_FILE=$(find . -maxdepth 1 -type f -name '.coverage.*' -not -name '.coverage' -print -quit)
-
-        if [ -z "$COVERAGE_FILE" ]; then
-          echo "::error::No .coverage.* data file found after running tests!"
-          ls -la .*
-          exit 1
-        fi
-
-        # Проверка на >1 файл (предупреждение)
-        OTHER_FILES=$(find . -maxdepth 1 -type f -name '.coverage.*' -not -name '.coverage' -not -path "$COVERAGE_FILE" -print)
-        if [ -n "$OTHER_FILES" ]; then
-           echo "::warning::Found more than one .coverage.* file. Using the first one found: $COVERAGE_FILE"
-           echo "Other files found:\n$OTHER_FILES"
-        fi
-
-        TARGET_FILE=".coverage.${{ matrix.python-version }}"
-        echo "Found unique coverage file: $COVERAGE_FILE"
-        echo "Attempting to rename '$COVERAGE_FILE' to '$TARGET_FILE'"
-        mv "$COVERAGE_FILE" "$TARGET_FILE"
-
-        if [ ! -f "$TARGET_FILE" ]; then
-          echo "::error::Failed to rename or find the target file '$TARGET_FILE' after move!"
-          ls -la .*
-          exit 1
-        fi
-        echo "Successfully renamed coverage file to $TARGET_FILE"
-
-        # --- ЖЕЛЕЗОБЕТОННАЯ ПРОВЕРКА ПЕРЕД ЗАГРУЗКОЙ ---
-        echo "Verifying existence and size of $TARGET_FILE before upload..."
-        ls -la "$TARGET_FILE" # Показываем детали файла
-        if [ ! -s "$TARGET_FILE" ]; then
-          echo "::error::File '$TARGET_FILE' exists but is EMPTY! Cannot upload."
-          # Возможно, тесты прошли, но покрытие не собралось?
-          exit 1
-        fi
-        echo "File '$TARGET_FILE' exists and is not empty. Proceeding to upload."
-        # --- КОНЕЦ ПРОВЕРКИ ---
-
-    - name: Upload coverage data artifact
-      id: upload_artifact_step # ID для легкого поиска логов этого шага
-      uses: actions/upload-artifact@v4
+    # --- Загрузка покрытия (только для тестовых окружений) ---
+    - name: Upload coverage to Codecov
+      # Запускаем только если это тестовое окружение (pyXX), а не lint/typing
+      if: startsWith(matrix.tox-env, 'py')
+      uses: codecov/codecov-action@v4
       with:
-        name: coverage-data-${{ matrix.python-version }} # Уникальное имя
-        path: .coverage.${{ matrix.python-version }} # Файл, который ТОЧНО существует и не пуст
-        retention-days: 1
-        # Явно указываем падать, если файл не найден (хотя проверка выше должна это предотвратить)
-        if-no-files-found: error
-        
-  upload-coverage:
-    needs: test-and-lint
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.xml # Путь указан в tox.ini
+        flags: python${{ matrix.python-version }} # Флаги для UI Codecov
+        name: codecov-${{ matrix.os }}-py${{ matrix.python-version }}
+        fail_ci_if_error: true
+      # Обработка ошибок токена (опционально, но полезно для PR от форков)
+      continue-on-error: true # Не ронять CI, если токен недоступен (например, в PR от форков)
+
+    - name: Upload coverage to Coveralls
+      # Запускаем только если это тестовое окружение (pyXX)
+      if: startsWith(matrix.tox-env, 'py')
+      uses: coverallsapp/github-action@v2
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }} # Используем встроенный токен
+        # repo_token: ${{ secrets.COVERALLS_REPO_TOKEN }} # Можно использовать явный токен, если GITHUB_TOKEN не сработает
+        path-to-lcov: ./coverage.lcov # Путь указан в tox.ini
+        flag-name: run-${{ matrix.python-version }} # Флаг для группировки
+        parallel: true # Указываем, что это часть параллельной сборки
+
+  # Завершающий джоб для Coveralls (нужен при parallel: true)
+  coveralls-finish:
+    name: Mark Coveralls build as finished
+    needs: test # Запускается после ВСЕХ джобов 'test'
     runs-on: ubuntu-latest
-    if: success()
-
+    # Запускать, даже если некоторые джобы 'test' упали (чтобы все равно отправить отчет)
+    # if: always() # Раскомментируй, если хочешь отправлять отчет даже при падении тестов
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Install coverage dependencies using uv
-        run: |
-          uv pip install --system -e ".[dev]"
-
-      - name: List files BEFORE download attempt
-        run: |
-          echo "--- Listing current directory BEFORE download ---"
-          ls -la
-          echo "-------------------------------------------------"
-
-      - name: Download all coverage data artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: coverage-data-*
-          # Скачиваем В папку coverage-artifacts.
-          # Похоже, файлы .coverage.X.Y окажутся ПРЯМО ЗДЕСЬ.
-          path: coverage-artifacts
-
-      - name: List files AFTER download attempt
-        run: |
-          echo "--- Listing current directory AFTER download ---"
-          ls -la
-          echo "--- Checking for coverage-artifacts directory ---"
-          ls -ld coverage-artifacts || echo "!!! Directory coverage-artifacts NOT FOUND !!!"
-          echo "--- Listing contents of coverage-artifacts ---"
-          # Ожидаем увидеть .coverage.3.9, .coverage.3.10 и т.д. здесь
-          ls -la coverage-artifacts || echo "!!! Cannot list coverage-artifacts contents !!!"
-          echo "--------------------------------------------------------"
-
-      - name: Combine coverage data
-        run: |
-          echo "Attempting to combine coverage data..."
-          # Проверяем, что папка coverage-artifacts существует
-          if [ ! -d "coverage-artifacts" ]; then
-             echo "::error::Directory coverage-artifacts not found before combine!"
-             exit 1
-          fi
-          # Проверяем, что она не пустая
-          if [ -z "$(ls -A coverage-artifacts)" ]; then
-             echo "::error::Directory coverage-artifacts exists but is EMPTY before combine!"
-             exit 1
-          fi
-
-          echo "Directory coverage-artifacts found and contains files. Combining..."
-          # ТЕПЕРЬ ГЛАВНОЕ ИЗМЕНЕНИЕ:
-          # Указываем coverage combine искать файлы .coverage.*
-          # НЕПОСРЕДСТВЕННО внутри папки coverage-artifacts
-          # coverage combine coverage-artifacts # Можно так, coverage найдет файлы
-          # Или более явно:
-          coverage combine coverage-artifacts/.coverage.*
-
-          echo "Combine command finished. Checking for .coverage file..."
-          # Файл .coverage создается в текущей директории (корне)
-          ls -la .coverage
-          if [ ! -s .coverage ]; then
-            echo "::error::Combined .coverage file is empty or does not exist after combine!"
-            echo "--- Coverage Debug Data ---"
-            coverage debug data
-            echo "---------------------------"
-            exit 1
-          fi
-          echo "Coverage data combined successfully."
-
-      - name: Generate and check coverage report
-        run: |
-          coverage report --fail-under=99 # Установи свой порог
-          coverage xml -o coverage.xml
-
-      - name: Upload coverage report to Coveralls
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-          COVERALLS_SERVICE_NAME: github
-        run: |
-          # uv pip install coveralls # Если нужно
-          coveralls --service=github
-
-      - name: Upload results to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
-          fail_ci_if_error: true
-          verbose: true
+    - name: Coveralls Finished
+      uses: coverallsapp/github-action@v2
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        # repo_token: ${{ secrets.COVERALLS_REPO_TOKEN }}
+        parallel-finished: true
+        # Опционально: Указать build-number, если автодетекция не сработает
+        # build-number: ${{ github.run_id }}
