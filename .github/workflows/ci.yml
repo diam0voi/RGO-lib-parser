@@ -1,4 +1,3 @@
-# .github/workflows/ci.yml
 name: CI Pipeline
 
 on:
@@ -8,10 +7,9 @@ on:
     branches: [ main ]
 
 permissions:
-  contents: read # Необходимо для checkout
-  # Для Coveralls v2+ с GITHUB_TOKEN:
-  checks: write   # Для отправки статуса
-  pull-requests: write # Для комментариев в PR (опционально)
+  contents: read
+  checks: write
+  pull-requests: write
 
 jobs:
   test:
@@ -20,14 +18,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest] # Можно добавить [windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
         include: # Добавляем lint и typing только для Python 3.13
-          - python-version: '3.13'
-            tox-env: lint
-          - python-version: '3.13'
-            tox-env: typing
-          # Добавляем тестовые окружения для каждой версии Python
           - python-version: '3.9'
             tox-env: py39
           - python-version: '3.10'
@@ -38,6 +31,9 @@ jobs:
             tox-env: py312
           - python-version: '3.13'
             tox-env: py313
+          - python-version: '3.13'
+            tox-env: typing
+
 
     steps:
     - name: Checkout repository
@@ -60,44 +56,37 @@ jobs:
         # MY_API_KEY: ${{ secrets.MY_API_KEY_FOR_TESTS }}
         PYTHON_VERSION: ${{ matrix.python-version }}
 
-    # --- Загрузка покрытия (только для тестовых окружений) ---
     - name: Upload coverage to Codecov
-      # Запускаем только если это тестовое окружение (pyXX), а не lint/typing
       if: startsWith(matrix.tox-env, 'py')
       uses: codecov/codecov-action@v4
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: ./coverage.xml # Путь указан в tox.ini
-        flags: python${{ matrix.python-version }} # Флаги для UI Codecov
+        flags: python${{ matrix.python-version }}
         name: codecov-${{ matrix.os }}-py${{ matrix.python-version }}
         fail_ci_if_error: true
-      # Обработка ошибок токена (опционально, но полезно для PR от форков)
       continue-on-error: true # Не ронять CI, если токен недоступен (например, в PR от форков)
 
     - name: Upload coverage to Coveralls
-      # Запускаем только если это тестовое окружение (pyXX)
       if: startsWith(matrix.tox-env, 'py')
       uses: coverallsapp/github-action@v2
       with:
-        github-token: ${{ secrets.GITHUB_TOKEN }} # Используем встроенный токен
-        # repo_token: ${{ secrets.COVERALLS_REPO_TOKEN }} # Можно использовать явный токен, если GITHUB_TOKEN не сработает
-        path-to-lcov: ./coverage.lcov # Путь указан в tox.ini
-        flag-name: run-${{ matrix.python-version }} # Флаг для группировки
-        parallel: true # Указываем, что это часть параллельной сборки
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        # repo_token: ${{ secrets.COVERALLS_REPO_TOKEN }}
+        path-to-lcov: ./coverage.lcov
+        flag-name: run-${{ matrix.python-version }}
+        parallel: true
 
-  # Завершающий джоб для Coveralls (нужен при parallel: true)
+
   coveralls-finish:
     name: Mark Coveralls build as finished
-    needs: test # Запускается после ВСЕХ джобов 'test'
+    needs: test
     runs-on: ubuntu-latest
-    # Запускать, даже если некоторые джобы 'test' упали (чтобы все равно отправить отчет)
-    # if: always() # Раскомментируй, если хочешь отправлять отчет даже при падении тестов
     steps:
     - name: Coveralls Finished
       uses: coverallsapp/github-action@v2
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        # repo_token: ${{ secrets.COVERALLS_REPO_TOKEN }}
+        repo_token: ${{ secrets.COVERALLS_REPO_TOKEN }}
         parallel-finished: true
-        # Опционально: Указать build-number, если автодетекция не сработает
-        # build-number: ${{ github.run_id }}
+        # Если автодетекция не сработает  # build-number: ${{ github.run_id }}
