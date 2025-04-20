@@ -28,9 +28,9 @@ Important: I'm NOT the owner of the site nor of the library materials therein, a
 ## Instructions:
 1. Download and run the program for your OS
 2. Open the document you need on the website of the open Russian Geographical Society (ru. "Obshestvo") library in the library's protected view (PV) module.
-3. Make sure the link looks like "https://elib.rgo.ru/safe-view/123456789/.../.../.../":
+3. Make sure the link looks like "https://elib.rgo.ru/safe-view/123456789/.../.../.../": <br>
     ![Example-link](https://github.com/user-attachments/assets/5d3456be-0ecd-42a0-9f6c-de6912b13f45)
-4. Copy/paste the name of the original file (accessible on the main page or in PV module) and the **actual** number of its pages (in PV module):
+4. Copy/paste the name of the original file (accessible on the main page or in PV module) and the **actual** number of its pages (in PV module): <br>
     ![Example-what-to-copy](https://github.com/user-attachments/assets/1741be2b-ad76-4259-955c-d880832ebbcc)
 5. Enjoy!
 
