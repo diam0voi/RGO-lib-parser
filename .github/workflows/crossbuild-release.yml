@@ -15,7 +15,7 @@ jobs:
           - os: windows-latest
             python-version: '3.12'
             asset_name: RGO_lib_parser_win64.exe
-            build_command: pyinstaller --onefile --windowed --icon="assets/winapp_lilacbook.ico" --add-data "assets/window_bnwbook.png;." --name RGO_lib_parser src/main.py
+            build_command: pyinstaller --onefile --windowed --icon="assets/winapp_lilacbook.ico" --add-data "assets/window_bnwbook.png;." --name RGO_lib_parser src/main.py 
             asset_path: ./dist/RGO_lib_parser.exe
             asset_content_type: application/vnd.microsoft.portable-executable
           - os: macos-latest
@@ -78,13 +78,13 @@ jobs:
         id: checksum_win
         working-directory: ./dist
         run: |
-          $fileName = Split-Path -Path "${{ matrix.asset_path }}" -Leaf
-          $checksumFile = "$fileName.sha512"
-          $checksumValue = (Get-FileHash -Path $fileName -Algorithm SHA512).Hash.ToLower()
-          $checksumLine = "$checksumValue  $fileName" # Два пробела
+          $assetName = "${{ matrix.asset_name }}"
+          $localFileName = Split-Path -Path "${{ matrix.asset_path }}" -Leaf
+          $checksumFile = "$assetName.sha512"
+          $checksumValue = (Get-FileHash -Path $localFileName -Algorithm SHA512).Hash.ToLower()
+          $checksumLine = "$checksumValue  $assetName"
           Set-Content -Path $checksumFile -Value $checksumLine
           echo "checksum_line=$checksumLine" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          echo "checksum_file=$checksumFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         shell: pwsh
 
       - name: Generate SHA512 Checksum (Linux/macOS)
@@ -92,12 +92,12 @@ jobs:
         id: checksum_nix
         working-directory: ./dist
         run: |
-          FILENAME=$(basename "${{ matrix.asset_path }}")
-          shasum -a 512 "$FILENAME" > "${FILENAME}.sha512"
-          CHECKSUM_LINE=$(cat "${FILENAME}.sha512")
-          CHECKSUM_FILE="${FILENAME}.sha512"
+          ASSET_NAME="${{ matrix.asset_name }}"
+          LOCAL_FILENAME=$(basename "${{ matrix.asset_path }}")
+          CHECKSUM_FILE="${ASSET_NAME}.sha512"
+          CHECKSUM_LINE=$(shasum -a 512 "$LOCAL_FILENAME" | awk -v name="$ASSET_NAME" '{print $1 "  " name}')
+          echo "$CHECKSUM_LINE" > "$CHECKSUM_FILE"
           echo "checksum_line=${CHECKSUM_LINE}" >> $GITHUB_OUTPUT
-          echo "checksum_file=${CHECKSUM_FILE}" >> $GITHUB_OUTPUT
         shell: bash
 
       - name: Upload Release Asset (${{ matrix.asset_name }})
@@ -105,17 +105,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload ${{ github.event.release.tag_name }} ${{ matrix.asset_path }} --clobber
-        shell: bash
-
-      - name: Upload Checksum File (${{ matrix.asset_name }}.sha512)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          CHECKSUM_FILE_OUTPUT="${{ steps.checksum_win.outputs.checksum_file || steps.checksum_nix.outputs.checksum_file }}"
-          CHECKSUM_FILE_PATH="./dist/$CHECKSUM_FILE_OUTPUT"
-          gh release upload ${{ github.event.release.tag_name }} "$CHECKSUM_FILE_PATH" --clobber
+          gh release upload ${{ github.event.release.tag_name }} ${{ matrix.asset_path }}#${{ matrix.asset_name }} --clobber
         shell: bash
 
       - name: Create temporary checksum file for aggregation
@@ -123,28 +113,21 @@ jobs:
         run: |
           CHECKSUM_LINE_OUTPUT="${{ steps.checksum_win.outputs.checksum_line || steps.checksum_nix.outputs.checksum_line }}"
           TEMP_DIR="${{ runner.temp }}"
-          FILE_PATH="$TEMP_DIR/checksum_line.txt"
+          FILE_PATH="$TEMP_DIR/checksum_line_${{ matrix.os }}.txt"
 
           echo "Runner OS: ${{ runner.os }}"
-          echo "Runner temp directory: $TEMP_DIR"
           echo "Target file path: $FILE_PATH"
           echo "Checksum line to write: $CHECKSUM_LINE_OUTPUT"
-
           mkdir -p "$TEMP_DIR"
-
           echo "$CHECKSUM_LINE_OUTPUT" > "$FILE_PATH"
 
           if [[ -f "$FILE_PATH" ]]; then
             echo "File $FILE_PATH created successfully."
-            echo "File content:"
             cat "$FILE_PATH"
           else
             echo "::error::File $FILE_PATH was not created!"
-            echo "Listing contents of $TEMP_DIR:"
-            ls -la "$TEMP_DIR" || echo "Could not list temp directory."
             exit 1
           fi
-
           echo "temp_file_path=$FILE_PATH" >> $GITHUB_OUTPUT
         shell: bash
 
@@ -189,7 +172,8 @@ jobs:
           cat checksums_raw.txt
 
           if [[ -s checksums_raw.txt ]]; then
-            sort checksums_raw.txt > checksums.txt
+            # Сортируем по имени файла (второе поле) для консистентности
+            sort -k 3 checksums_raw.txt > checksums.txt
           else
             echo "checksums_raw.txt is empty, creating empty checksums.txt"
             touch checksums.txt
@@ -198,7 +182,6 @@ jobs:
           echo "Checksums (SHA512) for release ${{ github.event.release.tag_name }}:" > aggregated_checksums.txt
           echo "" >> aggregated_checksums.txt
           cat checksums.txt >> aggregated_checksums.txt
-
           echo "checksum_path=aggregated_checksums.txt" >> $GITHUB_OUTPUT
 
           echo "Final contents of aggregated_checksums.txt:"
