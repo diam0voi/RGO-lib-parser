@@ -73,21 +73,32 @@ jobs:
         run: ${{ matrix.post_build_command }}
         shell: bash
 
-      - name: Generate SHA512 Checksum
-        id: checksum
+      - name: Generate SHA512 Checksum (Windows)
+        if: runner.os == 'Windows'
+        id: checksum_win
+        working-directory: ./dist
         run: |
-          cd dist
+          $filePath = "${{ matrix.asset_path }}" # Полный путь может быть ./dist/file.exe
+          $fileName = Split-Path -Leaf $filePath # Получаем только имя файла
+          $checksumFile = "$fileName.sha512"
+          $checksumValue = (Get-FileHash -Path $fileName -Algorithm SHA512).Hash.ToLower() 
+          $checksumLine = "$checksumValue *$fileName"
+          Set-Content -Path $checksumFile -Value $checksumLine
+          echo "checksum_line=$checksumLine" >> $env:GITHUB_OUTPUT
+          echo "checksum_file=$checksumFile" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Generate SHA512 Checksum (Linux/macOS)
+        if: runner.os != 'Windows'
+        id: checksum_nix
+        working-directory: ./dist
+        run: |
           FILENAME=$(basename "${{ matrix.asset_path }}")
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            certutil -hashfile "$FILENAME" SHA512 | findstr /v "hashfile CertUtil" > "${FILENAME}.sha512"
-            CHECKSUM_VALUE=$(type "${FILENAME}.sha512")
-          else
-            shasum -a 512 "$FILENAME" > "${FILENAME}.sha512"
-            CHECKSUM_VALUE=$(cat "${FILENAME}.sha512")
-          fi
-          echo "checksum_line=${CHECKSUM_VALUE}" >> $GITHUB_OUTPUT
-          echo "checksum_file=${FILENAME}.sha512" >> $GITHUB_OUTPUT
-          cd ..
+          shasum -a 512 "$FILENAME" > "${FILENAME}.sha512"
+          CHECKSUM_LINE=$(cat "${FILENAME}.sha512")
+          CHECKSUM_FILE="${FILENAME}.sha512"
+          echo "checksum_line=${CHECKSUM_LINE}" >> $GITHUB_OUTPUT
+          echo "checksum_file=${CHECKSUM_FILE}" >> $GITHUB_OUTPUT
         shell: bash
 
       - name: Upload Release Asset (${{ matrix.asset_name }})
@@ -103,22 +114,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload ${{ github.event.release.tag_name }} ./dist/${{ steps.checksum.outputs.checksum_file }} --clobber
+          CHECKSUM_FILE_OUTPUT="${{ steps.checksum_win.outputs.checksum_file || steps.checksum_nix.outputs.checksum_file }}"
+          gh release upload ${{ github.event.release.tag_name }} ./dist/$CHECKSUM_FILE_OUTPUT --clobber
         shell: bash
 
-      - name: Create temporary checksum file
-        id: create_checksum_file # Даем ID этому шагу
-        run: echo "${{ steps.checksum.outputs.checksum_line }}" > ${{ runner.temp }}/checksum_line.txt
+      - name: Create temporary checksum file for aggregation
+        id: create_checksum_file
+        run: |
+          CHECKSUM_LINE_OUTPUT="${{ steps.checksum_win.outputs.checksum_line || steps.checksum_nix.outputs.checksum_line }}"
+          echo "$CHECKSUM_LINE_OUTPUT" > ${{ runner.temp }}/checksum_line.txt
         shell: bash
 
-      # Шаг 2: Загружаем созданный файл как артефакт
       - name: Store checksum line for aggregation
         uses: actions/upload-artifact@v4
         with:
           name: checksum-line-${{ matrix.os }}
-          # Путь к файлу, созданному в предыдущем шаге
           path: ${{ runner.temp }}/checksum_line.txt
-
 
   aggregate-checksums:
     name: Aggregate Checksums
@@ -135,8 +146,9 @@ jobs:
       - name: Create aggregated checksums.txt file
         id: aggregate
         run: |
-          cat checksum-lines/*.txt > checksums.txt
-          echo "Checksums for release ${{ github.event.release.tag_name }}:" >> aggregated_checksums.txt
+          cat checksum-lines/*.txt > checksums_raw.txt
+          sort checksums_raw.txt > checksums.txt
+          echo "Checksums (SHA512) for release ${{ github.event.release.tag_name }}:" > aggregated_checksums.txt
           echo "" >> aggregated_checksums.txt
           cat checksums.txt >> aggregated_checksums.txt
           echo "checksum_path=aggregated_checksums.txt" >> $GITHUB_OUTPUT
