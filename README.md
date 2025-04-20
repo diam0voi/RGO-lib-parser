@@ -80,7 +80,7 @@ The application is made in the Standalone Portable format, strict availability o
 
 
 ## Ideas for future
-Add auto-recognition of blank (non-useful) spreads, CLI interface, and integration tests!
+Add auto-recognition of blank (non-useful) spreads, CLI interface, integration tests, SBOM & SLSA files, and fixes, baby, fixes!
 
 ## Repository & dependencies trees 
 ```
