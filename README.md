@@ -29,7 +29,8 @@ Important: I'm NOT the owner of the site nor of the library materials therein, a
 
 ## How to Run
 
-Below are instructions for running the application on different operating systems after downloading the corresponding file from the **Assets** section of this release.
+Below are instructions for running the application on different operating systems after downloading the corresponding file from the **Assets** section of this release.  
+The application is made in the Standalone Portable format, strict availability of the development language (Python) **is NOT** required!
 
 ---
 
@@ -109,7 +110,7 @@ RGO-lib-parser v1.4
 │   └── window_bnwbook.png
 │
 │
-├── assets/
+├── scripts/
 │   └── run_app.py
 │
 │
