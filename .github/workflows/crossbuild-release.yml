@@ -78,14 +78,17 @@ jobs:
         id: checksum_win
         working-directory: ./dist
         run: |
-          $filePath = "${{ matrix.asset_path }}" # Полный путь может быть ./dist/file.exe
-          $fileName = Split-Path -Leaf $filePath # Получаем только имя файла
-          $checksumFile = "$fileName.sha512"
-          $checksumValue = (Get-FileHash -Path $fileName -Algorithm SHA512).Hash.ToLower() 
-          $checksumLine = "$checksumValue *$fileName"
+          $filePath = Join-Path -Path "." -ChildPath (Split-Path -Path "${{ matrix.asset_path }}" -Leaf) # Получаем имя файла из matrix.asset_path
+          $checksumFile = "$filePath.sha512"
+          # Получаем хэш и приводим к нижнему регистру
+          $checksumValue = (Get-FileHash -Path $filePath -Algorithm SHA512).Hash.ToLower() 
+          # Формируем строку "HASH *FILENAME"
+          $checksumLine = "$checksumValue *$filePath"
+          # Записываем строку в файл .sha512
           Set-Content -Path $checksumFile -Value $checksumLine
-          echo "checksum_line=$checksumLine" >> $env:GITHUB_OUTPUT
-          echo "checksum_file=$checksumFile" >> $env:GITHUB_OUTPUT
+          # Выводим значения
+          echo "checksum_line=$checksumLine" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          echo "checksum_file=$checksumFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         shell: pwsh
 
       - name: Generate SHA512 Checksum (Linux/macOS)
@@ -95,7 +98,7 @@ jobs:
         run: |
           FILENAME=$(basename "${{ matrix.asset_path }}")
           shasum -a 512 "$FILENAME" > "${FILENAME}.sha512"
-          CHECKSUM_LINE=$(cat "${FILENAME}.sha512")
+          CHECKSUM_LINE=$(cat "${FILENAME}.sha512") 
           CHECKSUM_FILE="${FILENAME}.sha512"
           echo "checksum_line=${CHECKSUM_LINE}" >> $GITHUB_OUTPUT
           echo "checksum_file=${CHECKSUM_FILE}" >> $GITHUB_OUTPUT
@@ -114,14 +117,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Используем || для выбора правильного output
           CHECKSUM_FILE_OUTPUT="${{ steps.checksum_win.outputs.checksum_file || steps.checksum_nix.outputs.checksum_file }}"
           gh release upload ${{ github.event.release.tag_name }} ./dist/$CHECKSUM_FILE_OUTPUT --clobber
         shell: bash
 
       - name: Create temporary checksum file for aggregation
-        id: create_checksum_file
+        id: create_checksum_file 
         run: |
+          # Используем || для выбора правильного output
           CHECKSUM_LINE_OUTPUT="${{ steps.checksum_win.outputs.checksum_line || steps.checksum_nix.outputs.checksum_line }}"
+          # Убедимся, что директория существует (на всякий случай)
+          mkdir -p ${{ runner.temp }}
           echo "$CHECKSUM_LINE_OUTPUT" > ${{ runner.temp }}/checksum_line.txt
         shell: bash
 
