@@ -19,7 +19,7 @@ This is my first project of SUCH a level, so don't be surprised by 2-line commit
 Important: I'm NOT the owner of the site nor of the library materials therein, all rights reserved and belongs to the RGO lib owners! 
 
 
-## How the app works (example)
+## Illustrations of app working
 ![Example-start](https://github.com/user-attachments/assets/4ec54270-8c15-4eb1-b83e-0956a8c59e79)
 
 ![Example-process](https://github.com/user-attachments/assets/6040a85c-3043-4d02-ad77-e4095adf2ec0)
@@ -27,8 +27,49 @@ Important: I'm NOT the owner of the site nor of the library materials therein, a
 ![Example-result](https://github.com/user-attachments/assets/f57566c9-c692-4e68-91f5-5f2589cf34dc)
 
 
-## Instructions:
-1. Download and run the program for your OS
+## How to Run
+
+Below are instructions for running the application on different operating systems after downloading the corresponding file from the **Assets** section of this release.
+
+---
+
+### Windows (`RGO_lib_parser_win64.exe`)
+
+1.  **Download:** Download the `RGO_lib_parser_win64.exe` file from release.
+2.  **Run:** Find the downloaded `.exe` file (usually in your "Downloads" folder) and double-click it to run.
+3.  **Security Warning:** Windows Defender SmartScreen might show a warning ("Windows protected your PC") because the application is not signed with an official (and expensive) code signing certificate.
+    *   If you see this warning, click on **"More info"**.
+    *   Then, click the **"Run anyway"** button that appears.
+    *   This only needs to be done the first time you run the application.
+
+---
+
+### macOS (`RGO_lib_parser_macOS.zip`)
+
+1.  **Download:** Download the `RGO_lib_parser_macOS.zip` file from release.
+2.  **Unzip:** Find the downloaded `.zip` file (usually in "Downloads") and double-click it. macOS will automatically unzip it, creating the `RGO Lib Parser.app` file nearby.
+3.  **(Optional but Recommended):** Drag `RGO Lib Parser.app` from "Downloads" to your "Applications" folder.
+4.  **First Run (Important!):**
+    *   Locate `RGO Lib Parser.app` (in Downloads or Applications).
+    *   **Right-click** (or `Control`-click) the `RGO Lib Parser.app` icon.
+    *   Select **"Open"** from the context menu.
+5.  **Security Confirmation:** You might see a warning about the app being from an unidentified developer because it's downloaded from the internet and not signed with an Apple Developer ID. Since you used "Open" via right-click, you should see an **"Open"** button in this dialog. Click it.
+6.  **Subsequent Runs:** After opening it this way once, macOS will remember your choice, and you can launch `RGO Lib Parser.app` by double-clicking it like any other application.
+
+---
+
+### Linux (Ubuntu/Debian, etc. - `RGO_lib_parser_ubuntu`)
+
+1.  **Download:** Download the `RGO_lib_parser_ubuntu` file (it has no extension) from release.
+2.  **Open Terminal:** Launch your terminal application.
+3.  **Navigate:** Go to the directory where you downloaded the file (e.g., `cd ~/Downloads` or `cd ~/Загрузки`).
+4.  **Make Executable:** Grant the file permission to run: `chmod +x RGO_lib_parser_ubuntu`
+    *(You usually only need to do this once after downloading).*
+5.  **Run:** Execute the application from the terminal: `./RGO_lib_parser_ubuntu`
+    *(The `./` is important - it tells the terminal to run the file in the current directory).*
+
+## General instructions:
+1. Download and run the program for your OS.
 2. Open the document you need on the website of the open Russian Geographical Society (ru. "Obshestvo") library in the library's protected view (PV) module.
 3. Make sure the link looks like "https://elib.rgo.ru/safe-view/123456789/.../.../.../": <br>
     ![Example-link](https://github.com/user-attachments/assets/5d3456be-0ecd-42a0-9f6c-de6912b13f45)
