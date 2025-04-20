@@ -15,20 +15,20 @@ jobs:
           - os: windows-latest
             python-version: '3.13'
             asset_name: RGO_lib_parser_win64.exe
-            build_command: pyinstaller --onefile --windowed --icon="assets/winapp_lilacbook.ico" --add-data "assets/window_bnwbook.png;." --name RGO_lib_parser --paths . scripts/run_app.py
+            build_command: pyinstaller --onefile --windowed --icon="assets/winapp_lilacbook.ico" --add-data "assets/window_bnwbook.png:assets" --name RGO_lib_parser --paths . scripts/run_app.py
             asset_path: ./dist/RGO_lib_parser.exe
             asset_content_type: application/vnd.microsoft.portable-executable
           - os: macos-latest
             python-version: '3.13'
             asset_name: RGO_lib_parser_macOS.zip
-            build_command: pyinstaller --windowed --icon="assets/macapp_lilacbook.icns" --add-data "assets/window_bnwbook.png:." --name "RGO Lib Parser" --paths . scripts/run_app.py
+            build_command: pyinstaller --windowed --icon="assets/macapp_lilacbook.icns" --add-data "assets/window_bnwbook.png:assets" --name "RGO Lib Parser" --paths . scripts/run_app.py
             asset_path: ./dist/RGO_lib_parser_macOS.zip
             asset_content_type: application/zip
             post_build_command: zip -r ./dist/RGO_lib_parser_macOS.zip ./dist/"RGO Lib Parser.app"
           - os: ubuntu-latest
             python-version: '3.13'
             asset_name: RGO_lib_parser_ubuntu
-            build_command: pyinstaller --onefile --noconsole --add-data "assets/window_bnwbook.png:." --name RGO_lib_parser --paths . scripts/run_app.py
+            build_command: pyinstaller --onefile --noconsole --add-data "assets/window_bnwbook.png:assets" --name RGO_lib_parser --paths . scripts/run_app.py
             asset_path: ./dist/RGO_lib_parser
             asset_content_type: application/octet-stream
             pre_build_command: |
