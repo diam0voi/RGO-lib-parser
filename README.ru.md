@@ -43,6 +43,7 @@ Switch to ENG ---> [![switch to ENG](https://img.shields.io/badge/lang-en-red.sv
 
 ## Схемы-деревья репозитория и зависимостей проекта
 ```
+RGO-lib-parser v1.4
 ├── .github/
 │   ├── ISSUE_TEMPLATE/ 
 │       ├── bug_report.yml
