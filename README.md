@@ -16,6 +16,7 @@ Important: I'm NOT the owner of the site nor of the library materials therein, a
 | **Other** |  [![GitHub last commit](https://img.shields.io/github/last-commit/diam0voi/RGO-lib-parser?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/commits/main) ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/diam0voi/RGO-lib-parser/total?style=flat-square) [![GitHub repo size](https://img.shields.io/github/repo-size/diam0voi/RGO-lib-parser.svg?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/) [![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/diam0voi/RGO-lib-parser.svg?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/)  |
 | | | 
 
+
 ## How the app works (example)
 ![Example-start](https://github.com/user-attachments/assets/4ec54270-8c15-4eb1-b83e-0956a8c59e79)
 
@@ -29,12 +30,9 @@ Important: I'm NOT the owner of the site nor of the library materials therein, a
 2. Open the document you need on the website of the open Russian Geographical Society (ru. "Obshestvo") library in the library's protected view (PV) module.
 3. Make sure the link looks like "https://elib.rgo.ru/safe-view/123456789/.../.../.../":
     ![Example-link](https://github.com/user-attachments/assets/5d3456be-0ecd-42a0-9f6c-de6912b13f45)
-
 4. Copy/paste the name of the original file (accessible on the main page or in PV module) and the **actual** number of its pages (in PV module):
     ![Example-what-to-copy](https://github.com/user-attachments/assets/1741be2b-ad76-4259-955c-d880832ebbcc)
-
-
-6. Enjoy!
+5. Enjoy!
 
 
 ## Ideas for future
