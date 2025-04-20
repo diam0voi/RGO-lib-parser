@@ -1,13 +1,6 @@
 # RGO-lib-parser: описание
 Switch to ENG ---> [![switch to ENG](https://img.shields.io/badge/lang-en-red.svg?style=for-the-badge)](https://github.com/diam0voi/RGO-lib-parser/blob/main/README.md)
 
-### Простенькая штучка для простенькой задачки
-По своей сути - это парсер, предназначенный для конкретного сайта с его отчасти причудливым форматом хранения данных. На нём собраны сканы редких экземпляров очень нишевых исторических литературных источников, которые вам могут понадобится, скажем, для интерактивной панели на выставке. Но просто так вам их не получить! Вы можете только смотреть! Так родилась идея автоматизировать процесс ручного создания целой горы скриншотов: я решил облегчить жизнь знакомым, которым пришлось этим заниматься. 
-
-Это мой первый проект ТАКОГО уровня, так что не удивляйтесь коммитам в 2 строчки и совершенно нелепым косякам, со временем я точно освоюсь и чувство кринжа пройдёт (нет).
-
-Важно: я НЕ ЯВЛЯЮСЬ как владельцем сайта библиотеки, так и правообладателем публикуемого на нём материала, все права защищены и принадлежат текущим владельцам сайта! 
-
 
 ### Информативное
 |        |                                                                                                                                                             |
@@ -17,6 +10,15 @@ Switch to ENG ---> [![switch to ENG](https://img.shields.io/badge/lang-en-red.sv
 | **Совместимость** | ![Python Version](https://img.shields.io/badge/python-3.9+-brightgreen?logo=python&logoColor=ffe770&style=flat-square) ![Windows X](https://img.shields.io/badge/Windows%20X%2010+-0078D6?style=flat-square) ![macOS X](https://img.shields.io/badge/MacOS%20X%2013+-000000?logo=macos&logoColor=white&style=flat-square&logoSize=auto) ![Ubuntu X](https://img.shields.io/badge/Ubuntu%20X%2022+-E95420?logo=ubuntu&logoColor=white&style=flat-square&logoSize=auto) |
 | **Другое** |  [![GitHub last commit](https://img.shields.io/github/last-commit/diam0voi/RGO-lib-parser?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/commits/main) ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/diam0voi/RGO-lib-parser/total?style=flat-square) [![GitHub repo size](https://img.shields.io/github/repo-size/diam0voi/RGO-lib-parser.svg?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/) [![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/diam0voi/RGO-lib-parser.svg?style=flat-square)](https://github.com/diam0voi/RGO-lib-parser/)  |
 | | | 
+
+
+### Простенькая штучка для простенькой задачки
+По своей сути - это парсер, предназначенный для конкретного сайта с его отчасти причудливым форматом хранения данных. На нём собраны сканы редких экземпляров очень нишевых исторических литературных источников, которые вам могут понадобится, скажем, для интерактивной панели на выставке. Но просто так вам их не получить! Вы можете только смотреть! Так родилась идея автоматизировать процесс ручного создания целой горы скриншотов: я решил облегчить жизнь знакомым, которым пришлось этим заниматься. 
+
+Это мой первый проект ТАКОГО уровня, так что не удивляйтесь коммитам в 2 строчки и совершенно нелепым косякам, со временем я точно освоюсь и чувство кринжа пройдёт (нет).
+
+Важно: я НЕ ЯВЛЯЮСЬ как владельцем сайта библиотеки, так и правообладателем публикуемого на нём материала, все права защищены и принадлежат текущим владельцам сайта! 
+
 
 ## Образец работы приложения на разных этапах
 ![Example-start](https://github.com/user-attachments/assets/4ec54270-8c15-4eb1-b83e-0956a8c59e79)
