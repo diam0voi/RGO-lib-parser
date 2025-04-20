@@ -51,7 +51,7 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        shell: bash # Для совместимости команд
+        shell: bash
 
       - name: Install Tkinter (Linux only)
         if: runner.os == 'Linux' && matrix.pre_build_command
@@ -73,31 +73,19 @@ jobs:
         run: ${{ matrix.post_build_command }}
         shell: bash
 
-      # --- ИСПРАВЛЕННЫЙ ШАГ ДЛЯ WINDOWS ---
       - name: Generate SHA512 Checksum (Windows)
         if: runner.os == 'Windows'
         id: checksum_win
-        working-directory: ./dist # Работаем прямо в директории dist
+        working-directory: ./dist
         run: |
-          # Получаем только имя файла из полного пути matrix.asset_path
-          $fileName = Split-Path -Path "${{ matrix.asset_path }}" -Leaf 
+          $fileName = Split-Path -Path "${{ matrix.asset_path }}" -Leaf
           $checksumFile = "$fileName.sha512"
-          
-          # Вычисляем хэш SHA512 и берем только значение хэша в нижнем регистре
-          $checksumValue = (Get-FileHash -Path $fileName -Algorithm SHA512).Hash.ToLower() 
-          
-          # Формируем строку в формате "HASH  FILENAME" (два пробела, как у shasum)
-          $checksumLine = "$checksumValue  $fileName" # Используем два пробела для совместимости с shasum
-          
-          # Записываем эту строку в файл .sha512 в кодировке UTF-8 без BOM (по умолчанию для Set-Content в PS Core)
+          $checksumValue = (Get-FileHash -Path $fileName -Algorithm SHA512).Hash.ToLower()
+          $checksumLine = "$checksumValue  $fileName" # Два пробела
           Set-Content -Path $checksumFile -Value $checksumLine
-          
-          # Выводим переменные для следующих шагов через GITHUB_OUTPUT
-          # Используем Out-File для надежной записи в $env:GITHUB_OUTPUT
           echo "checksum_line=$checksumLine" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           echo "checksum_file=$checksumFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        shell: pwsh 
-      # --- КОНЕЦ ИСПРАВЛЕННОГО ШАГА ---
+        shell: pwsh
 
       - name: Generate SHA512 Checksum (Linux/macOS)
         if: runner.os != 'Windows'
@@ -105,9 +93,8 @@ jobs:
         working-directory: ./dist
         run: |
           FILENAME=$(basename "${{ matrix.asset_path }}")
-          # shasum генерирует формат "HASH  FILENAME" (с двумя пробелами)
           shasum -a 512 "$FILENAME" > "${FILENAME}.sha512"
-          CHECKSUM_LINE=$(cat "${FILENAME}.sha512") 
+          CHECKSUM_LINE=$(cat "${FILENAME}.sha512")
           CHECKSUM_FILE="${FILENAME}.sha512"
           echo "checksum_line=${CHECKSUM_LINE}" >> $GITHUB_OUTPUT
           echo "checksum_file=${CHECKSUM_FILE}" >> $GITHUB_OUTPUT
@@ -116,7 +103,7 @@ jobs:
       - name: Upload Release Asset (${{ matrix.asset_name }})
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # gh cli может использовать и GH_TOKEN
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload ${{ github.event.release.tag_name }} ${{ matrix.asset_path }} --clobber
         shell: bash
@@ -126,55 +113,96 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Используем || для выбора правильного output из шагов checksum_win или checksum_nix
           CHECKSUM_FILE_OUTPUT="${{ steps.checksum_win.outputs.checksum_file || steps.checksum_nix.outputs.checksum_file }}"
-          # Путь к файлу чек-суммы внутри dist
           CHECKSUM_FILE_PATH="./dist/$CHECKSUM_FILE_OUTPUT"
           gh release upload ${{ github.event.release.tag_name }} "$CHECKSUM_FILE_PATH" --clobber
         shell: bash
 
       - name: Create temporary checksum file for aggregation
-        id: create_checksum_file 
+        id: create_checksum_file
         run: |
-          # Используем || для выбора правильного output
           CHECKSUM_LINE_OUTPUT="${{ steps.checksum_win.outputs.checksum_line || steps.checksum_nix.outputs.checksum_line }}"
-          # Убедимся, что директория существует (на всякий случай)
-          mkdir -p ${{ runner.temp }}
-          # Записываем строку чек-суммы во временный файл
-          echo "$CHECKSUM_LINE_OUTPUT" > ${{ runner.temp }}/checksum_line.txt
+          TEMP_DIR="${{ runner.temp }}"
+          FILE_PATH="$TEMP_DIR/checksum_line.txt"
+
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Runner temp directory: $TEMP_DIR"
+          echo "Target file path: $FILE_PATH"
+          echo "Checksum line to write: $CHECKSUM_LINE_OUTPUT"
+
+          mkdir -p "$TEMP_DIR"
+
+          echo "$CHECKSUM_LINE_OUTPUT" > "$FILE_PATH"
+
+          if [[ -f "$FILE_PATH" ]]; then
+            echo "File $FILE_PATH created successfully."
+            echo "File content:"
+            cat "$FILE_PATH"
+          else
+            echo "::error::File $FILE_PATH was not created!"
+            echo "Listing contents of $TEMP_DIR:"
+            ls -la "$TEMP_DIR" || echo "Could not list temp directory."
+            exit 1
+          fi
+
+          echo "temp_file_path=$FILE_PATH" >> $GITHUB_OUTPUT
         shell: bash
 
       - name: Store checksum line for aggregation
         uses: actions/upload-artifact@v4
         with:
-          name: checksum-line-${{ matrix.os }} # Уникальное имя артефакта для каждой ОС
-          path: ${{ runner.temp }}/checksum_line.txt # Путь к файлу для загрузки
+          name: checksum-line-${{ matrix.os }}
+          path: ${{ steps.create_checksum_file.outputs.temp_file_path }}
+          if-no-files-found: error
 
   aggregate-checksums:
     name: Aggregate Checksums
-    needs: build-release # Запускается после всех build-release джобов
+    needs: build-release
     runs-on: ubuntu-latest
     steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
       - name: Download all checksum lines
         uses: actions/download-artifact@v4
         with:
-          pattern: checksum-line-* # Скачиваем все артефакты, начинающиеся с checksum-line-
-          path: checksum-lines # Скачиваем в директорию checksum-lines
-          merge-multiple: true # Объединяем содержимое артефактов в одну директорию
+          pattern: checksum-line-*
+          path: checksum-lines
+          merge-multiple: true
 
       - name: Create aggregated checksums.txt file
         id: aggregate
         run: |
-          # Объединяем все .txt файлы из скачанной директории в один сырой файл
-          cat checksum-lines/*.txt > checksums_raw.txt
-          # Сортируем строки для консистентности
-          sort checksums_raw.txt > checksums.txt
-          # Создаем финальный файл с заголовком
+          echo "Listing downloaded artifact files in checksum-lines/:"
+          ls -l checksum-lines/
+
+          if find checksum-lines -name '*.txt' -print -quit | grep -q .; then
+            echo "Contents of downloaded .txt files:"
+            cat checksum-lines/*.txt
+            cat checksum-lines/*.txt > checksums_raw.txt
+          else
+            echo "::warning::No .txt files found in downloaded artifacts."
+            touch checksums_raw.txt
+          fi
+
+          echo "Contents of checksums_raw.txt (before sort):"
+          cat checksums_raw.txt
+
+          if [[ -s checksums_raw.txt ]]; then
+            sort checksums_raw.txt > checksums.txt
+          else
+            echo "checksums_raw.txt is empty, creating empty checksums.txt"
+            touch checksums.txt
+          fi
+
           echo "Checksums (SHA512) for release ${{ github.event.release.tag_name }}:" > aggregated_checksums.txt
-          echo "" >> aggregated_checksums.txt # Пустая строка для разделения
-          cat checksums.txt >> aggregated_checksums.txt # Добавляем отсортированные строки
-          # Выводим путь к финальному файлу для следующего шага
+          echo "" >> aggregated_checksums.txt
+          cat checksums.txt >> aggregated_checksums.txt
+
           echo "checksum_path=aggregated_checksums.txt" >> $GITHUB_OUTPUT
+
+          echo "Final contents of aggregated_checksums.txt:"
+          cat aggregated_checksums.txt
         shell: bash
 
       - name: Upload aggregated checksums.txt
@@ -182,6 +210,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Загружаем агрегированный файл чек-сумм
-          gh release upload ${{ github.event.release.tag_name }} ${{ steps.aggregate.outputs.checksum_path }} --clobber
+          AGG_FILE="${{ steps.aggregate.outputs.checksum_path }}"
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          echo "Uploading '$AGG_FILE' to release '$RELEASE_TAG'"
+          if [[ ! -f "$AGG_FILE" ]]; then
+             echo "::error::Aggregated checksum file '$AGG_FILE' not found!"
+             exit 1
+          fi
+          gh release upload "$RELEASE_TAG" "$AGG_FILE" --clobber
         shell: bash
