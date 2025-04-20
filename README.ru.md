@@ -20,7 +20,7 @@ Switch to ENG ---> [![switch to ENG](https://img.shields.io/badge/lang-en-red.sv
 Важно: я НЕ ЯВЛЯЮСЬ как владельцем сайта библиотеки, так и правообладателем публикуемого на нём материала, все права защищены и принадлежат текущим владельцам сайта! 
 
 
-## Образец работы приложения на разных этапах
+## Примеры работы на разных этапах
 ![Example-start](https://github.com/user-attachments/assets/4ec54270-8c15-4eb1-b83e-0956a8c59e79)
 
 ![Example-process](https://github.com/user-attachments/assets/6040a85c-3043-4d02-ad77-e4095adf2ec0)
@@ -28,7 +28,47 @@ Switch to ENG ---> [![switch to ENG](https://img.shields.io/badge/lang-en-red.sv
 ![Example-result](https://github.com/user-attachments/assets/f57566c9-c692-4e68-91f5-5f2589cf34dc)
 
 
-## Инструкции:
+## Как воспользоваться
+
+Ниже привёл инструкции по непосредственно запуску ПО для различных операционнок после загрузки соответствующего файла из раздела **Assets** последнего релиза.
+Приложение сделано в формате Standalone Portable, строгое наличие языка разработки у вас (Python) **НЕ** требуется!
+
+---
+
+### Windows (`RGO_lib_parser_win64.exe`)
+
+1.  **Скачивание:** скачайте файл `RGO_lib_parser_win64.exe` из релиза.
+2.  **Запуск:** найдите у себя на компьютере этот файл и запустите.
+3.  **Оповещение безопасности:** Встроенный защитник Windows 10+ SmartScreen наверняка покажет предупреждение ("Windows защитила ваш компьютер"), потому что я не имел оффициального (и дорогущего) сертификата подписи кода.
+    *   Если оно вам встретилось, нажмите на **"Подробнее"**.
+    *   После этого появится кнопка **"Выполнить в любом случае"**, нажимайте.
+    *   Это нужно только при первом запуске. При желании отключите у себя насовсем, инструкции в интернете.
+
+---
+
+### macOS (`RGO_lib_parser_macOS.zip`)
+
+1.  **Скачивание:** скачайте файл `RGO_lib_parser_macOS.zip` из релиза.
+2.  **Распаковка:** найдите у себя на компьютере этот архив `.zip` и распакуйте просто двойным кликом.
+3.  **Запуск:**
+    *   Найдите в распакованном архиве этот файл.
+    *   Рекомендовано: перетащите `RGO Lib Parser.app` из "Загрузки" в вашу папку "Приложения".
+    *   **Важно: правый клик (или `Control`-клик)** по иконке `RGO Lib Parser.app`.
+4.  **Оповещение безопасности:** вы наверняка увидите предупреждение, что приложение у вас от неопределённого разработчика, потому что я не обладаю оффициальным (и дорогущим) Apple Developer ID. Но так как вы открываете через "расширенный доступ", вы увидите кнопку **"Открыть"** в диалоговом окне, нажимайте. После этого запуск доступен двойным кликом.
+
+---
+
+### Linux (пока Debian-based - `RGO_lib_parser_ubuntu`)
+
+1.  **Скачивание:** скачайте файл `RGO_lib_parser_ubuntu` (он без расширения) из релиза.
+2.  **Работа в терминале:** запустите свой терминал.
+3.  **Перемещение:** перейдите в директорию, где оказался скачанный файл (e.g., `cd ~/Downloads` or `cd ~/Загрузки`).
+4.  **Флаг исполняемости:** предоставьте файлу разрешение на запуск командой: `chmod +x RGO_lib_parser_ubuntu`
+    *(Обычно это нужно только при первом запуске).*
+5.  **Запуск:** запустите приложение командой: `./RGO_lib_parser_ubuntu`
+---
+
+## Основные инструкции
 1. Скачайте последнюю версию программы под свою ОС.
 2. Откройте нужный вам документ на сайте библиотеки открытого Русского географического общества (в модуле защищенного просмотра (МЗП)).
 3. Убедитесь, что ссылка имеет вид "https://elib.rgo.ru/safe-view/123456789/.../.../.../": <br>
@@ -52,13 +92,14 @@ RGO-lib-parser v1.4
 │       └── feature_request.yml
 │   ├── workflows/
 │       ├── .codecov.yml
+│       ├── bandit.yml
 │       ├── ci.yml
 │       ├── crossbuild-release.yml
 │       ├── dependabot.yml
 │       ├── labeler.yml
 │       ├── pull_request_template.md
-│       └── bug_report.yml
-│   ├── CODEOWNERS.bib
+│       └── scorecard.yml
+│   ├── CODEOWNERS(.bib)
 │   └── labels.yml
 │
 │
@@ -68,20 +109,35 @@ RGO-lib-parser v1.4
 │   └── window_bnwbook.png
 │
 │
+├── scripts/
+│   └── run_app.py
+│
+│
 ├── src/
 │   ├── __init__.py
+│   ├── app_state.py
 │   ├── config.py
 │   ├── gui.py
+│   ├── image_processing.py
 │   ├── logic.py
 │   ├── main.py
+│   ├── settings_manager.py
+│   ├── task_manager.py
+│   ├── types.py
+│   ├── ui_builder.py
 │   └── utils.py
 │
 │
 ├── tests/        
 │   ├── __init__.py
+│   ├── test_app_state.py
 │   ├── test_config.py
+│   ├── test_image_processing.py
 │   ├── test_logic.py
 │   ├── test_main.py
+│   ├── test_settings_manager.py
+│   ├── test_task_manager.py
+│   ├── test_types.py
 │   └── test_utils.py
 │
 │
@@ -91,13 +147,14 @@ RGO-lib-parser v1.4
 │
 │
 ├── .codacy.yaml
-├── .gitattributes.bib
-├── .gitignore.bib
+├── .gitattributes(.bib)
+├── .gitignore(.bib)
 ├── .markdownlint.yaml
 ├── .pre-commit-config.yaml
 ├── CODE_OF_CONDUCT.md
 ├── CONTRIBUTING.md
-├── LICENSE.bib
+├── CONTRIBUTING.ru.md
+├── LICENSE(.bib)
 ├── pyproject.toml
 ├── README.md
 ├── README.ru.md
