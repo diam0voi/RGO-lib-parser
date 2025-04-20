@@ -92,11 +92,13 @@ RGO-lib-parser v1.4
 │       └── feature_request.yml
 │   ├── workflows/
 │       ├── .codecov.yml
+│       ├── bandit.yml
 │       ├── ci.yml
 │       ├── crossbuild-release.yml
 │       ├── dependabot.yml
 │       ├── labeler.yml
-│       └── pull_request_template.md
+│       ├── pull_request_template.md
+│       └── scorecard.yml
 │   ├── CODEOWNERS(.bib)
 │   └── labels.yml
 │
@@ -105,6 +107,10 @@ RGO-lib-parser v1.4
 │   ├── macapp_lilacbook.icns
 │   ├── winapp_lilacbook.ico
 │   └── window_bnwbook.png
+│
+│
+├── assets/
+│   └── run_app.py
 │
 │
 ├── src/
