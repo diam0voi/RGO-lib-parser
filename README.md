@@ -20,6 +20,8 @@ Important: I'm NOT the owner of the site nor of the library materials therein, a
 
 
 ## Illustrations of app working
+![example-cycle-gif](https://github.com/user-attachments/assets/292932c0-d829-407f-b978-e20163b64dff)
+
 ![Example-start](https://github.com/user-attachments/assets/4ec54270-8c15-4eb1-b83e-0956a8c59e79)
 
 ![Example-process](https://github.com/user-attachments/assets/6040a85c-3043-4d02-ad77-e4095adf2ec0)
