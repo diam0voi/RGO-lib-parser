@@ -1,4 +1,5 @@
 # RGO-lib-parser: описание
+![Current license: AGPLv3](https://www.gnu.org/graphics/agplv3-155x51.png)
 Switch to ENG ---> [![switch to ENG](https://img.shields.io/badge/lang-en-red.svg?style=for-the-badge)](https://github.com/diam0voi/RGO-lib-parser/blob/main/README.md)
 
 
